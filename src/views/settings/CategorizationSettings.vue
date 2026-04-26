@@ -44,13 +44,14 @@ import { mapState, mapGetters } from 'pinia';
 import CategoryEditTree from '~/components/CategoryEditTree.vue';
 import CategoryEditModal from '~/components/CategoryEditModal.vue';
 import 'vue-awesome/icons/undo';
+import { translateCurrent } from '~/i18n';
 import router from '~/route';
 
 import { useCategoryStore } from '~/stores/categories';
 
 import _ from 'lodash';
-
-const confirmationMessage = 'Your categories have unsaved changes, are you sure you want to leave?';
+const confirmationMessageKey =
+  'Your categories have unsaved changes, are you sure you want to leave?';
 
 export default {
   name: 'CategorizationSettings',
@@ -79,7 +80,7 @@ export default {
     this.routerGuardRemover = router.beforeEach((to, from, next) => {
       try {
         if (this.classes_unsaved_changes) {
-          if (confirm(confirmationMessage)) {
+          if (confirm(translateCurrent(confirmationMessageKey))) {
             next();
           } else {
             next(false);
@@ -165,6 +166,7 @@ export default {
       if (this.classes_unsaved_changes) {
         e = e || window.event;
         e.preventDefault();
+        const confirmationMessage = translateCurrent(confirmationMessageKey);
         e.returnValue = confirmationMessage;
         return confirmationMessage;
       }

@@ -39,7 +39,7 @@ export default {
         components: path.resolve(__dirname, './src/components'),
       },
       fallback: {
-        domain: import.meta.resolve('domain-browser'),
+        domain: path.resolve(__dirname, 'node_modules/domain-browser/source/index.js'),
       },
     },
     plugins: [

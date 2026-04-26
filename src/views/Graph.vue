@@ -28,7 +28,9 @@ div
       | Generate
 
   div.d-flex.mt-1
-    span.mr-auto.small(style="color: #666") Hostname: {{queryOptions.hostname}}
+    div.mr-auto.small(style="color: #666")
+      div Selection: {{ querySelectionLabel }}
+      div(v-if="queryOptions.hostname") Hostname: {{ queryOptions.hostname }}
     b-button.border-0(size="sm", variant="outline-dark" @click="show_options = !show_options")
       span(v-if="!show_options")
         | #[icon(name="angle-double-down")] Show options
@@ -101,6 +103,28 @@ export default {
       queryOptions: {},
     };
   },
+  computed: {
+    querySelectionLabel() {
+      const parts = [];
+      if (this.queryOptions.username) {
+        parts.push(this.queryOptions.username);
+      }
+      if (this.queryOptions.device_name) {
+        parts.push(this.queryOptions.device_name);
+      }
+      if (this.queryOptions.session_id) {
+        parts.push(
+          `Session ${this.queryOptions.session_id}${
+            this.queryOptions.session_type ? ` (${this.queryOptions.session_type})` : ''
+          }`
+        );
+      }
+      if (parts.length === 0 && this.queryOptions.hostname) {
+        parts.push(this.queryOptions.hostname);
+      }
+      return parts.join(' | ') || 'No watcher session selected';
+    },
+  },
   mounted: async function () {
     await this.categoryStore.load();
   },
@@ -110,10 +134,15 @@ export default {
       this.graphdata = this.generateGraphData(this.events);
     },
     fetchEvents: async function () {
+      if (!this.queryOptions.bid_window || !this.queryOptions.bid_afk) {
+        this.error = 'No matching window/AFK watcher pair is selected.';
+        return [];
+      }
+
       // TODO: use full query (one per day/timeperiod) instead of canonicalEvents
       let query = canonicalEvents({
-        bid_window: 'aw-watcher-window_' + this.queryOptions.hostname,
-        bid_afk: 'aw-watcher-afk_' + this.queryOptions.hostname,
+        bid_window: this.queryOptions.bid_window,
+        bid_afk: this.queryOptions.bid_afk,
         filter_afk: this.queryOptions.filter_afk,
         categories: this.categoryStore.classes_for_query,
         filter_categories: this.excludeUncategorized

@@ -61,7 +61,7 @@ div
         icon#includeAudibleHelp(name="question-circle" style="opacity: 0.4")
         b-tooltip(target="includeAudibleHelp" v-b-tooltip.hover title="If the active window is an audible browser tab, count as active. Requires a browser watcher.")
 
-      b-form-checkbox(v-if="devmode" v-model="include_stopwatch" size="sm")
+      b-form-checkbox(v-if="devmode && stopwatchEnabled" v-model="include_stopwatch" size="sm")
         // WIP: https://github.com/ActivityWatch/aw-webui/pull/368
         | Include manually logged events (stopwatch)
         br
@@ -153,6 +153,7 @@ import moment from 'moment';
 import { get_day_start_with_offset, get_today_with_offset } from '~/util/time';
 import { periodLengthConvertMoment } from '~/util/timeperiod';
 import _ from 'lodash';
+import { translateCurrent } from '~/i18n';
 
 import 'vue-awesome/icons/arrow-left';
 import 'vue-awesome/icons/arrow-right';
@@ -164,6 +165,7 @@ import 'vue-awesome/icons/save';
 import 'vue-awesome/icons/question-circle';
 import 'vue-awesome/icons/filter';
 
+import { useAdminUiStore } from '~/stores/adminUi';
 import { useSettingsStore } from '~/stores/settings';
 import { useCategoryStore } from '~/stores/categories';
 import { useActivityStore, QueryOptions } from '~/stores/activity';
@@ -206,9 +208,13 @@ export default {
     };
   },
   computed: {
+    ...mapState(useAdminUiStore, ['showStopwatchMenu']),
     ...mapState(useViewsStore, ['views']),
     ...mapState(useSettingsStore, ['devmode']),
     ...mapState(useSettingsStore, ['always_active_pattern']),
+    stopwatchEnabled() {
+      return this.showStopwatchMenu;
+    },
 
     // number of filters currently set (different from defaults)
     filters_set() {
@@ -342,6 +348,14 @@ export default {
     include_audible: function () {
       this.refresh();
     },
+    include_stopwatch: function () {
+      this.refresh();
+    },
+    showStopwatchMenu: function (enabled) {
+      if (!enabled && this.include_stopwatch) {
+        this.include_stopwatch = false;
+      }
+    },
   },
 
   mounted: async function () {
@@ -442,7 +456,7 @@ export default {
         .map(([k, _v]) => k);
       const valid = errors.length == 0;
       if (!valid) {
-        alert(`Invalid form input: ${errors}`);
+        alert(translateCurrent('Invalid form input: {errors}', { errors: errors.join(', ') }));
       }
       return valid;
     },

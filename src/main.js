@@ -27,6 +27,8 @@ import router from './route.js';
 
 // Sets up the pinia store
 import pinia from './stores';
+import { installI18n, startLocalization } from './i18n';
+import { useAuthStore } from './stores/auth';
 
 // Register Font Awesome icon component
 Vue.component('icon', () => import('vue-awesome/components/Icon.vue'));
@@ -74,19 +76,43 @@ Vue.prototype.COMMIT_HASH = COMMIT_HASH;
 // Set the $isAndroid constant
 Vue.prototype.$isAndroid = process.env.VUE_APP_ON_ANDROID;
 
+installI18n(Vue, pinia);
+
 // Create an instance of AWClient as this.$aw
 // NOTE: needs to be created before the Vue app is created,
 //       since stores rely on it having been run.
 import { createClient, getClient, configureClient } from './util/awclient';
 createClient();
+getClient().req.interceptors.response.use(
+  response => response,
+  error => {
+    if (error?.response?.status === 401) {
+      const authStore = useAuthStore(pinia);
+      authStore.setLoggedOut();
+
+      if (router.currentRoute.path !== '/login') {
+        router
+          .replace({
+            path: '/login',
+            query: { next: router.currentRoute.fullPath },
+          })
+          .catch(() => undefined);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 // Setup Vue app
 import App from './App.vue';
 new Vue({
   el: '#app',
   router: router,
-  render: h => h(App),
   pinia,
+  mounted() {
+    startLocalization(router, pinia);
+  },
+  render: h => h(App),
 });
 
 // Set the $aw global

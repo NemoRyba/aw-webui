@@ -40,6 +40,7 @@ import 'vue-awesome/icons/undo';
 import { mapState } from 'pinia';
 import draggable from 'vuedraggable';
 
+import { translateCurrent } from '~/i18n';
 import { useViewsStore } from '~/stores/views';
 
 export default {
@@ -88,7 +89,9 @@ export default {
     restoreDefaults() {
       useViewsStore().restoreDefaults();
       alert(
-        "All views have been restored to defaults. Changes won't be saved until you click 'Save'."
+        translateCurrent(
+          "All views have been restored to defaults. Changes won't be saved until you click 'Save'."
+        )
       );
       // If we're on an URL that might become invalid, navigate to the main/default view
       if (!this.$route.path.includes('default')) {
@@ -102,10 +105,10 @@ export default {
       let props = {};
 
       if (type === 'custom_vis') {
-        const visname = prompt('Please enter the watcher name', 'aw-watcher-');
+        const visname = prompt(translateCurrent('Please enter the watcher name'), 'aw-watcher-');
         if (!visname) return;
 
-        const title = prompt('Please enter the visualization title');
+        const title = prompt(translateCurrent('Please enter the visualization title'));
         if (!title) return;
 
         props = {

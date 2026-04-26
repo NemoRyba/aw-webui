@@ -1,30 +1,30 @@
 <template lang="pug">
 div.container(style="color: #555; font-size: 0.9em")
   div.mb-2
-    | Made with
+    | {{ $tr('Made with') }}
     a(href="https://activitywatch.net/donate/", target="_blank")
       icon(name="heart" scale=0.75 style="fill: #E55")
-    | by the #[a(href="http://activitywatch.net/contributors/") ActivityWatch developers]
+    | {{ $tr('by the') }} #[a(href="http://activitywatch.net/contributors/") {{ $tr('ActivityWatch developers') }}]
     div
       span.mt-2(v-if="info", style="color: #888; font-size: 0.8em")
         span.mr-2
-          b Host:
+          b {{ $tr('Host:') }}
           | &nbsp; {{info.hostname}}
         span
-          b Version:
+          b {{ $tr('Version:') }}
           | &nbsp; {{info.version}}
 
   div(style="font-size: 0.9em; opacity: 0.8; fill: #88F")
     div.float-none.float-md-right.my-2
       a(href="https://github.com/ActivityWatch/activitywatch/issues/new/choose", target="_blank").mr-3
         icon(name="bug")
-        | Report a bug
+        | {{ $tr('Report a bug') }}
       a(href="https://forum.activitywatch.net/c/support", target="_blank").mr-3
         icon(name="question-circle")
-        | Ask for help
+        | {{ $tr('Ask for help') }}
       a(href="https://forum.activitywatch.net/c/features", target="_blank")
         icon(name="vote-yea")
-        | Vote on features
+        | {{ $tr('Vote on features') }}
     div.float-none.float-md-left.my-2
       a(href="https://twitter.com/ActivityWatchIt", target="_blank")
         icon(name="brands/twitter")
@@ -34,7 +34,7 @@ div.container(style="color: #555; font-size: 0.9em")
         | GitHub
       a(href="https://activitywatch.net/donate/", target="_blank").ml-3
         icon(name="hand-holding-heart")
-        | Donate
+        | {{ $tr('Donate') }}
 </template>
 
 <script lang="ts">

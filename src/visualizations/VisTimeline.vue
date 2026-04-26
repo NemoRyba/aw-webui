@@ -2,6 +2,12 @@
   div
     div#visualization
 
+    div.timeline-details(v-if="items.length > 0")
+      h6.timeline-details__title.mb-2 {{ $tr('Timeline details') }}
+      div.timeline-details__empty.small.text-muted(v-if="!detailHtml")
+        | {{ $tr('Hover over a timeline item to inspect its details here.') }}
+      div.timeline-details__content(v-else v-html="detailHtml")
+
     div.small.text-muted.my-2(v-if="bucketsFromEither.length != 1")
       i Buckets with no events in the queried range will be hidden.
 
@@ -31,6 +37,47 @@ div#visualization {
     }
   }
 }
+
+.timeline-details {
+  margin-top: 0.75em;
+  padding: 0.75em 1em;
+  border: 1px solid rgba(127, 127, 127, 0.35);
+  border-radius: 0.5em;
+  background: rgba(127, 127, 127, 0.08);
+}
+
+.timeline-details__title {
+  font-weight: 600;
+}
+
+.timeline-details__content {
+  font-size: 0.92em;
+
+  table {
+    margin: 0;
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    padding: 0.15em 0.6em 0.15em 0;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    white-space: nowrap;
+    opacity: 0.8;
+  }
+
+  td {
+    word-break: break-word;
+  }
+
+  a {
+    word-break: break-all;
+  }
+}
 </style>
 
 <script lang="ts">
@@ -41,6 +88,7 @@ import { buildTooltip } from '../util/tooltip.js';
 import { getCategoryColorFromEvent, getTitleAttr } from '../util/color';
 import { getSwimlane } from '../util/swimlane.js';
 import { IEvent } from '../util/interfaces';
+import { translateCurrent } from '~/i18n';
 
 import { Timeline } from 'vis-timeline/esnext';
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
@@ -57,6 +105,20 @@ interface IChartDataItem {
   color: string;
   event: IEvent;
   swimlane: string;
+}
+
+interface ITimelineItem {
+  id: string;
+  group: string;
+  content: string;
+  start: moment.Moment;
+  end: moment.Moment;
+  style: string;
+  subgroup: string;
+  detailHtml: string;
+  bucketId?: string;
+  event?: IEvent | null;
+  editable?: boolean;
 }
 export default {
   components: {
@@ -81,6 +143,7 @@ export default {
         zoomMin: 1000 * 60, // 10min in milliseconds
         zoomMax: 1000 * 60 * 60 * 24 * 31 * 3, // about three months in milliseconds
         stack: false,
+        showTooltips: false,
         tooltip: {
           followMouse: true,
           overflowMethod: 'cap',
@@ -89,6 +152,8 @@ export default {
       },
       editingEvent: null,
       editingEventBucket: null,
+      detailItemId: null,
+      detailHtml: '',
 
       updateHasRun: false,
     };
@@ -163,7 +228,13 @@ export default {
     this.$nextTick(() => {
       const el = this.$el.querySelector('#visualization');
       this.timeline = new Timeline(el, [], [], this.options);
+      this.timeline.on('itemover', properties => {
+        this.setDetailFromItemId(properties.item);
+      });
       this.timeline.on('select', properties => {
+        if (properties.items.length === 1) {
+          this.setDetailFromItemId(properties.items[0]);
+        }
         // Sends both 'press' and 'tap' events, only one should trigger
         if (properties.event.type == 'tap') {
           this.onSelect(properties);
@@ -174,6 +245,19 @@ export default {
     });
   },
   methods: {
+    setDetailFromItemId(itemId) {
+      if (itemId === null || itemId === undefined) {
+        return;
+      }
+
+      const item = _.find(this.items, i => String(i.id) === String(itemId));
+      if (!item) {
+        return;
+      }
+
+      this.detailItemId = String(item.id);
+      this.detailHtml = item.detailHtml || '';
+    },
     openEditor: function () {
       this.$bvModal.show('edit-modal-' + this.editingEvent.id);
     },
@@ -181,9 +265,13 @@ export default {
       if (properties.items.length == 0) {
         return;
       } else if (properties.items.length == 1) {
-        const event = this.chartData[properties.items[0]].event;
-        const groupId = this.items[properties.items[0]].group;
-        const bucketId = _.find(this.groups, g => g.id == groupId).content;
+        const item = _.find(this.items, i => String(i.id) === String(properties.items[0]));
+        if (!item || !item.editable || !item.event || !item.bucketId) {
+          return;
+        }
+
+        const event = item.event;
+        const bucketId = item.bucketId;
 
         // We retrieve the full event to ensure if's not cut-off by the query range
         // See: https://github.com/ActivityWatch/aw-webui/pull/320#issuecomment-1056921587
@@ -196,12 +284,18 @@ export default {
         });
         if (!isAlertWarningShown) {
           alert(
-            "Note: Changes won't be reflected in the timeline until the page is refreshed. This will be improved in a future version."
+            translateCurrent(
+              "Note: Changes won't be reflected in the timeline until the page is refreshed. This will be improved in a future version."
+            )
           );
           isAlertWarningShown = true;
         }
       } else {
-        alert('selected multiple items: ' + JSON.stringify(properties.items));
+        alert(
+          translateCurrent('selected multiple items: {items}', {
+            items: JSON.stringify(properties.items),
+          })
+        );
       }
     },
     ensureUpdate() {
@@ -228,33 +322,40 @@ export default {
             );
           }
         }
-        return { id: bucket.id, content: this.showRowLabels ? bucket.id : '' };
+        return {
+          id: bucket.id,
+          content: this.showRowLabels ? bucket.display_name || bucket.id : '',
+        };
       });
 
       // Build items
-      const items = _.map(this.chartData, (item, i) => {
+      const items: ITimelineItem[] = _.map(this.chartData, (item, i) => {
         const bgColor = item.color;
         const borderColor = Color(bgColor).darken(0.3);
         return {
           id: String(i),
           group: item.bucketId,
           content: item.title,
-          title: item.tooltip,
           start: moment(item.start),
           end: moment(item.end),
           style: `background-color: ${bgColor}; border-color: ${borderColor}`,
           subgroup: item.swimlane,
+          detailHtml: item.tooltip,
+          bucketId: item.bucketId,
+          event: item.event,
+          editable: true,
         };
       });
 
       if (groups.length > 0 && items.length > 0) {
         if (this.queriedInterval && this.showQueriedInterval) {
           const duration = this.queriedInterval[1].diff(this.queriedInterval[0], 'seconds');
-          groups.push({ id: String(groups.length), content: 'queried interval' });
+          const queriedIntervalGroupId = '__queried_interval__';
+          groups.push({ id: queriedIntervalGroupId, content: 'queried interval' });
           items.push({
-            id: String(items.length + 1),
-            group: groups.length - 1,
-            title: buildTooltip(
+            id: '__queried_interval__',
+            group: queriedIntervalGroupId,
+            detailHtml: buildTooltip(
               { type: 'test' },
               {
                 timestamp: this.queriedInterval[0],
@@ -267,6 +368,8 @@ export default {
             end: this.queriedInterval[1],
             style: 'background-color: #aaa; height: 10px',
             subgroup: ``,
+            editable: false,
+            event: null,
           });
         }
 
@@ -292,6 +395,10 @@ export default {
 
         this.items = items;
         this.groups = groups;
+        if (!this.detailItemId || !_.find(items, item => String(item.id) === this.detailItemId)) {
+          this.detailItemId = null;
+          this.detailHtml = '';
+        }
       } else {
         // update the timeline range
         this.options.min = this.queriedInterval[0];
@@ -303,6 +410,8 @@ export default {
         this.timeline.setData({ groups: [], items: [] });
         this.items = [];
         this.groups = [];
+        this.detailItemId = null;
+        this.detailHtml = '';
       }
     },
   },

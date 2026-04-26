@@ -22,6 +22,7 @@ interface State {
   // Timestamp when user was first seen (first time webapp is run)
   initialTimestamp: Moment;
 
+  language: 'de' | 'en';
   startOfDay: string;
   startOfWeek: string;
   durationDefault: number;
@@ -36,6 +37,7 @@ interface State {
     timesPollIsShown: number;
   };
   always_active_pattern: string;
+  columnOrdersData: Record<string, string[]>;
   classes: Category[];
   views: View[];
 
@@ -53,6 +55,7 @@ export const useSettingsStore = defineStore('settings', {
   state: (): State => ({
     initialTimestamp: moment(),
 
+    language: 'de',
     startOfDay: '04:00',
     startOfWeek: 'Monday',
     durationDefault: 4 * 60 * 60,
@@ -74,6 +77,7 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     always_active_pattern: '',
+    columnOrdersData: {},
     classes: defaultCategories,
     views: defaultViews,
 

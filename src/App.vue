@@ -1,18 +1,25 @@
 <template lang="pug">
 div#wrapper(v-if="loaded")
-  aw-header
+  template(v-if="showChrome")
+    aw-header
 
-  div(:class="{'container': !fullContainer, 'container-fluid': fullContainer}").px-0.px-md-2
-    div.aw-container.my-sm-3.p-3
-      error-boundary
-        user-satisfaction-poll
-        new-release-notification(v-if="isNewReleaseCheckEnabled")
-        router-view
+    div(:class="{'container': !fullContainer, 'container-fluid': fullContainer}").px-0.px-md-2
+      div.aw-container.my-sm-3.p-3
+        error-boundary
+          user-satisfaction-poll
+          new-release-notification(v-if="isNewReleaseCheckEnabled")
+          router-view
 
-  aw-footer
+    aw-footer
+
+  template(v-else)
+    error-boundary
+      router-view
 </template>
 
 <script lang="ts">
+import { useAdminUiStore } from '~/stores/adminUi';
+import { useAuthStore } from '~/stores/auth';
 import { useSettingsStore } from '~/stores/settings';
 import { useServerStore } from '~/stores/server';
 import { detectPreferredTheme } from '~/util/theme';
@@ -33,13 +40,27 @@ export default {
     fullContainer() {
       return this.$route.meta.fullContainer;
     },
+    showChrome() {
+      const authStore = useAuthStore();
+      return authStore.authenticated && this.$route.path !== '/login';
+    },
   },
 
   async beforeCreate() {
-    // Get Theme From LocalStorage
+    const authStore = useAuthStore();
+    await authStore.ensureLoaded();
+
+    // Get Theme From settings when signed in, otherwise use localStorage fallback.
     const settingsStore = useSettingsStore();
-    await settingsStore.ensureLoaded();
-    const theme = settingsStore.theme;
+    let theme = 'auto';
+    if (authStore.authenticated) {
+      await settingsStore.ensureLoaded();
+      const adminUiStore = useAdminUiStore();
+      await adminUiStore.ensureLoaded();
+      theme = settingsStore.theme;
+    } else if (typeof localStorage !== 'undefined') {
+      theme = localStorage.theme || 'auto';
+    }
     const detectedTheme = theme === 'auto' ? detectPreferredTheme() : theme;
 
     // Apply the dark theme if detected

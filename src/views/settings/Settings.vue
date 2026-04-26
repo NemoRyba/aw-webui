@@ -1,6 +1,6 @@
 <template lang="pug">
 div
-  h3 Settings
+  h3 {{ $tr('Settings') }}
 
   hr
 

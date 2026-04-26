@@ -1,29 +1,41 @@
 <template lang="pug">
 div
-  h3 {{ id }}
+  h3.mb-1 {{ bucketDisplayName }}
+  div.small.text-muted.mb-3 {{ $tr('Bucket ID') }}: {{ id }}
   table
     tr
-      th Type:
+      th {{ $tr('Type:') }}
       td {{ bucket.type }}
     tr
-      th Client:
+      th {{ $tr('Client:') }}
       td {{ bucket.client }}
     tr
-      th Hostname:
+      th {{ $tr('Username') }}:
+      td {{ identity.username }}
+    tr
+      th {{ $tr('Device') }}:
+      td {{ identity.deviceName }}
+    tr
+      th {{ $tr('Session') }}:
+      td
+        | {{ identity.sessionId }}
+        span(v-if="identity.sessionType")  ({{ identity.sessionType }})
+    tr
+      th {{ $tr('Hostname') }}:
       td {{ bucket.hostname }}
     tr
-      th Created:
+      th {{ $tr('Created:') }}
       td {{ bucket.created | iso8601 }}
     tr(v-if="bucket.metadata")
-      th First/last event:
+      th {{ $tr('First/last event:') }}
       td
         | {{ bucket.metadata.start}} /
         | {{ bucket.metadata.end }}
     tr
-      th Eventcount:
+      th {{ $tr('Eventcount:') }}
       td {{ eventcount }}
     tr
-      th Data:
+      th {{ $tr('Data:') }}
       td {{ bucket.data }}
 
   input-timeinterval(v-model="daterange", :maxDuration="maxDuration")
@@ -36,6 +48,7 @@ div
 <script lang="ts">
 import { useBucketsStore } from '~/stores/buckets';
 import { getClient } from '~/util/awclient';
+import { getBucketIdentity } from '~/util/bucketIdentity';
 
 export default {
   name: 'Bucket',
@@ -56,10 +69,23 @@ export default {
     bucket() {
       return this.bucketsStore.getBucket(this.id) || { id: this.id };
     },
+    identity() {
+      return getBucketIdentity(this.bucket);
+    },
+    bucketDisplayName() {
+      return [
+        this.identity.watcherLabel,
+        `${this.$tr('Session')} ${this.identity.sessionId}${
+          this.identity.sessionType ? ` (${this.identity.sessionType})` : ''
+        }`,
+        this.identity.username,
+        this.identity.deviceName,
+      ].join(' | ');
+    },
     bucket_with_events() {
-      console.log(this.bucket);
       return {
         ...this.bucket,
+        display_name: this.bucketDisplayName,
         events: this.events,
       };
     },

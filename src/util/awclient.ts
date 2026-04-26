@@ -21,6 +21,7 @@ export function createClient(force?: boolean): AWClient {
       testing: !production,
       baseURL,
     });
+    _client.req.defaults.withCredentials = true;
   } else {
     throw 'Tried to instantiate global AWClient twice!';
   }
@@ -30,6 +31,7 @@ export function createClient(force?: boolean): AWClient {
 export function configureClient(): void {
   const settings = useSettingsStore();
   _client.req.defaults.timeout = 1000 * settings.requestTimeout;
+  _client.req.defaults.withCredentials = true;
 }
 
 export function getClient(): AWClient {

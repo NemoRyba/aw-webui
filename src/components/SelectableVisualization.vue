@@ -85,7 +85,7 @@ div
       vis-timeline(:buckets="timeline_buckets", :showRowLabels='true', :queriedInterval="timeline_daterange")
     div(v-if="type == 'score'")
       aw-score()
-    div(v-if="type == 'top_stopwatches'")
+    div(v-if="type == 'top_stopwatches' && stopwatchEnabled")
       aw-summary(:fields="activityStore.stopwatch.top_stopwatches",
                  :namefunc="e => e.data.label",
                  :colorfunc="e => e.data.label",
@@ -115,6 +115,7 @@ import { buildBarchartDataset } from '~/util/datasets';
 // TODO: Move this somewhere else
 import { build_category_hierarchy } from '~/util/classes';
 
+import { useAdminUiStore } from '~/stores/adminUi';
 import { useActivityStore } from '~/stores/activity';
 import { useCategoryStore } from '~/stores/categories';
 import { useBucketsStore } from '~/stores/buckets';
@@ -139,26 +140,8 @@ export default {
     return {
       activityStore: useActivityStore(),
       categoryStore: useCategoryStore(),
+      adminUiStore: useAdminUiStore(),
 
-      types: [
-        'top_apps',
-        'top_titles',
-        'top_domains',
-        'top_urls',
-        'top_browser_titles',
-        'top_categories',
-        'category_tree',
-        'category_sunburst',
-        'top_editor_files',
-        'top_editor_languages',
-        'top_editor_projects',
-        'timeline_barchart',
-        'sunburst_clock',
-        'custom_vis',
-        'vis_timeline',
-        'score',
-        'top_stopwatches',
-      ],
       // TODO: Move this function somewhere else
       top_editor_files_namefunc: e => {
         let f = e.data.file || '';
@@ -181,6 +164,30 @@ export default {
     };
   },
   computed: {
+    stopwatchEnabled() {
+      return this.adminUiStore.showStopwatchMenu;
+    },
+    types() {
+      return [
+        'top_apps',
+        'top_titles',
+        'top_domains',
+        'top_urls',
+        'top_browser_titles',
+        'top_categories',
+        'category_tree',
+        'category_sunburst',
+        'top_editor_files',
+        'top_editor_languages',
+        'top_editor_projects',
+        'timeline_barchart',
+        'sunburst_clock',
+        'custom_vis',
+        'vis_timeline',
+        'score',
+        ...(this.stopwatchEnabled ? ['top_stopwatches'] : []),
+      ];
+    },
     visualizations: function () {
       return {
         top_apps: {
@@ -249,7 +256,7 @@ export default {
         },
         top_stopwatches: {
           title: 'Top Stopwatch Events',
-          available: this.activityStore.stopwatch.available,
+          available: this.stopwatchEnabled && this.activityStore.stopwatch.available,
         },
       };
     },
@@ -318,8 +325,17 @@ export default {
     type: async function (newType) {
       if (newType == 'vis_timeline') await this.getTimelineBuckets();
     },
+    stopwatchEnabled: function (enabled) {
+      if (!enabled && this.type == 'top_stopwatches') {
+        this.$emit('onTypeChange', this.id, this.types[0]);
+      }
+    },
   },
   mounted: async function () {
+    if (!this.stopwatchEnabled && this.type == 'top_stopwatches') {
+      this.$emit('onTypeChange', this.id, this.types[0]);
+      return;
+    }
     if (this.type == 'vis_timeline') {
       await this.getTimelineBuckets();
     }

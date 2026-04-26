@@ -21,6 +21,8 @@ div
       div
         b Options
       div
+        small Selection: {{ querySelectionLabel }}
+      div(v-if="queryOptions.hostname")
         small Hostname: {{ queryOptions.hostname }}
       div
         small Range: {{ queryOptions.start }} - {{ queryOptions.stop }}
@@ -152,6 +154,26 @@ export default {
   },
   computed: {
     ...mapState(useCategoryStore, ['allCategoriesSelect']),
+    querySelectionLabel() {
+      const parts = [];
+      if (this.queryOptions.username) {
+        parts.push(this.queryOptions.username);
+      }
+      if (this.queryOptions.device_name) {
+        parts.push(this.queryOptions.device_name);
+      }
+      if (this.queryOptions.session_id) {
+        parts.push(
+          `Session ${this.queryOptions.session_id}${
+            this.queryOptions.session_type ? ` (${this.queryOptions.session_type})` : ''
+          }`
+        );
+      }
+      if (parts.length === 0 && this.queryOptions.hostname) {
+        parts.push(this.queryOptions.hostname);
+      }
+      return parts.join(' | ') || 'No watcher session selected';
+    },
     words_by_duration: function () {
       const words: { word: string; duration: number }[] = [...this.words.values()];
       return words
@@ -190,21 +212,19 @@ export default {
   methods: {
     async fetchWords() {
       this.loading = true;
-      if (!this.queryOptions.hostname) {
-        // FIXME: This is a hack to ensure that the hostname is set (otherwise isn't due to some race condition)
-        // Don't ever return the "unknown" hostname
-        // TODO: ideally, only choose a hostname that has the right buckets
-        this.queryOptions.hostname = _.filter(
-          useBucketsStore().hosts,
-          host => host !== 'unknown'
-        )[0];
+
+      if (!this.queryOptions.bid_window || !this.queryOptions.bid_afk) {
+        this.words = new Map();
+        this.loading = false;
+        return;
       }
+
       await this.categoryStore.load();
       const awclient = getClient();
       const query =
         canonicalEvents({
-          bid_window: 'aw-watcher-window_' + this.queryOptions.hostname,
-          bid_afk: 'aw-watcher-afk_' + this.queryOptions.hostname,
+          bid_window: this.queryOptions.bid_window,
+          bid_afk: this.queryOptions.bid_afk,
           filter_afk: this.queryOptions.filter_afk,
           categories: this.categoryStore.classes_for_query,
           filter_categories: [this.category],

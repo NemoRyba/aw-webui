@@ -1,7 +1,16 @@
 import Vue from 'vue';
 import VueRouter from 'vue-router';
+import pinia from './stores';
+import { useAdminUiStore } from './stores/adminUi';
+import { useAuthStore } from './stores/auth';
 
 const Home = () => import('./views/Home.vue');
+const Login = () => import('./views/Login.vue');
+const FleetOverview = () => import('./views/fleet/FleetOverview.vue');
+const FleetUsers = () => import('./views/fleet/FleetUsers.vue');
+const FleetUser = () => import('./views/fleet/FleetUser.vue');
+const FleetDevices = () => import('./views/fleet/FleetDevices.vue');
+const FleetDevice = () => import('./views/fleet/FleetDevice.vue');
 
 // Activity views for desktop
 const Activity = () => import('./views/activity/Activity.vue');
@@ -33,7 +42,13 @@ const router = new VueRouter({
         return localStorage.landingpage || '/home';
       },
     },
+    { path: '/login', component: Login, meta: { public: true, authOnly: true } },
     { path: '/home', component: Home },
+    { path: '/fleet', component: FleetOverview },
+    { path: '/fleet/users', component: FleetUsers },
+    { path: '/fleet/users/:username', component: FleetUser, props: true },
+    { path: '/fleet/devices', component: FleetDevices },
+    { path: '/fleet/devices/:device_id', component: FleetDevice, props: true },
     {
       path: '/activity/:host/:periodLength?/:date?',
       component: Activity,
@@ -65,6 +80,7 @@ const router = new VueRouter({
     { path: '/timespiral', component: TimespiralView },
     { path: '/settings', component: Settings },
     { path: '/settings/category-builder', component: CategoryBuilder },
+    // Fork override: stopwatch code is retained, but UI visibility is runtime-configured.
     { path: '/stopwatch', component: Stopwatch },
     { path: '/search', component: Search },
     { path: '/graph', component: Graph },
@@ -75,6 +91,42 @@ const router = new VueRouter({
       component: NotFound,
     },
   ],
+});
+
+router.beforeEach(async (to, _from, next) => {
+  const authStore = useAuthStore(pinia);
+  await authStore.ensureLoaded();
+
+  if (authStore.authenticated) {
+    const adminUiStore = useAdminUiStore(pinia);
+    await adminUiStore.ensureLoaded();
+
+    if (to.path === '/login') {
+      next(
+        (typeof to.query.next === 'string' && to.query.next) || localStorage.landingpage || '/home'
+      );
+      return;
+    }
+
+    if (to.path === '/stopwatch' && !adminUiStore.showStopwatchMenu) {
+      next(localStorage.landingpage || '/home');
+      return;
+    }
+
+    next();
+    return;
+  }
+
+  const isPublic = to.matched.some(record => record.meta && record.meta.public);
+  if (isPublic) {
+    next();
+    return;
+  }
+
+  next({
+    path: '/login',
+    query: { next: to.fullPath },
+  });
 });
 
 export default router;
