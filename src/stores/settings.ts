@@ -28,6 +28,8 @@ interface State {
   durationDefault: number;
   useColorFallback: boolean;
   afkOverlayColor: string;
+  fleetSummaryShowAfkTime: boolean;
+  fleetSummaryIgnoreAudibleBrowserTime: boolean;
   landingpage: string;
   theme: 'light' | 'dark' | 'auto';
 
@@ -62,6 +64,8 @@ export const useSettingsStore = defineStore('settings', {
     durationDefault: 4 * 60 * 60,
     useColorFallback: false,
     afkOverlayColor: '#ff4d4f',
+    fleetSummaryShowAfkTime: false,
+    fleetSummaryIgnoreAudibleBrowserTime: false,
     landingpage: '/home',
 
     theme: 'auto',

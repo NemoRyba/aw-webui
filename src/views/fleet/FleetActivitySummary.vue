@@ -237,15 +237,16 @@ export default {
     user: { type: Object, required: true },
   },
   data() {
+    const settingsStore = useSettingsStore();
     return {
       bucketsStore: useBucketsStore(),
       categoryStore: useCategoryStore(),
-      settingsStore: useSettingsStore(),
+      settingsStore,
       loading: false,
       loadError: '',
       showFilters: false,
-      showAfkTime: false,
-      countAudibleBrowserTime: true,
+      showAfkTime: settingsStore.fleetSummaryShowAfkTime,
+      countAudibleBrowserTime: !settingsStore.fleetSummaryIgnoreAudibleBrowserTime,
       textFilter: '',
       activeWindowEvents: [],
     };

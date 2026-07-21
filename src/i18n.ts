@@ -450,6 +450,12 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'AFK overlay color': 'AFK-Overlay-Farbe',
     'Color used for the hatched AFK overlay in summary bars.':
       'Farbe für das schraffierte AFK-Overlay in Übersichts-Balken.',
+    'Fleet summary filter defaults': 'Standardfilter für Flottenübersichten',
+    'Initial checkbox states for Fleet user summary filters.':
+      'Anfangszustand der Checkboxen in Flotten-Benutzerübersichten.',
+    'Show AFK time by default': 'AFK-Zeit standardmäßig anzeigen',
+    'Count audible browser tab as active by default':
+      'Hörbaren Browser-Tab standardmäßig als aktiv zählen',
     Enabled: 'Aktiviert',
     Disabled: 'Deaktiviert',
     'Use fallback colors': 'Fallback-Farben verwenden',
