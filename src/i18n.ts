@@ -23,7 +23,7 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     Loading: 'Lädt',
     'Loading...': 'Lädt...',
     Timeline: 'Zeitachse',
-    Fleet: 'Geräte',
+    Fleet: 'Flotte',
     Stopwatch: 'Stoppuhr',
     Tools: 'Werkzeuge',
     Search: 'Suche',

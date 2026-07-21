@@ -42,7 +42,7 @@ div(:class="{'fixed-top-padding': fixedTopMenu}")
         b-nav-item(to="/fleet")
           div.px-2.px-lg-1
             icon(name="calendar-week")
-            | {{ $tr('Devices') }}
+            | {{ $tr('Fleet') }}
 
         b-nav-item(v-if="showStopwatchMenu" to="/stopwatch")
           div.px-2.px-lg-1
