@@ -378,24 +378,20 @@ export default {
         unit = 'hour';
       } else if (totalDays > 370) {
         unit = 'month';
-      } else if (totalDays > 70) {
-        unit = 'week';
       }
 
-      const start =
-        unit === 'week'
-          ? this.rangeStart.clone().startOf('isoWeek')
-          : this.rangeStart.clone().startOf(unit);
+      const start = this.rangeStart.clone().startOf(unit);
       const bins = [];
       let cursor = start;
+      const maxBins = unit === 'day' ? 400 : 240;
 
-      while (cursor.isBefore(this.rangeEnd) && bins.length < 180) {
+      while (cursor.isBefore(this.rangeEnd) && bins.length < maxBins) {
         const binStart = cursor.clone();
         const binEnd = cursor.clone().add(1, unit);
         bins.push({
           start: binStart,
           end: binEnd,
-          label: this.formatBinLabel(binStart, unit),
+          label: this.formatBinLabel(binStart, binEnd, unit),
         });
         cursor = binEnd;
       }
@@ -443,7 +439,20 @@ export default {
         });
       }
 
-      return Object.values(datasetByCategory).map((dataset: any) => {
+      const datasets = Object.values(datasetByCategory) as any[];
+      this.timelineBins.forEach((bin, index) => {
+        const binTotal = _.sumBy(datasets, dataset => Number(dataset.data[index] || 0));
+        const binCapacity = this.binCapacityHours(bin);
+
+        if (binTotal > binCapacity && binCapacity > 0) {
+          const scale = binCapacity / binTotal;
+          datasets.forEach(dataset => {
+            dataset.data[index] *= scale;
+          });
+        }
+      });
+
+      return datasets.map((dataset: any) => {
         const isOther = dataset.key === 'Other';
         const category = dataset.category;
         return {
@@ -461,8 +470,15 @@ export default {
     },
     timelineChartMinWidth() {
       const binCount = Math.max(1, this.timelineBins.length);
-      const pxPerBin = binCount > 90 ? 34 : binCount > 45 ? 42 : binCount > 20 ? 52 : 72;
+      const pxPerBin =
+        binCount > 180 ? 26 : binCount > 90 ? 34 : binCount > 45 ? 42 : binCount > 20 ? 52 : 72;
       return `${Math.max(1040, binCount * pxPerBin)}px`;
+    },
+    timelineYAxisMax() {
+      if (this.timelineBins.length === 0) {
+        return undefined;
+      }
+      return Math.ceil(Math.max(...this.timelineBins.map(bin => this.binCapacityHours(bin))));
     },
     activeTheme() {
       const theme = this.settingsStore.theme || 'auto';
@@ -510,6 +526,7 @@ export default {
           y: {
             stacked: true,
             min: 0,
+            max: this.timelineYAxisMax,
             grid: {
               color: this.chartGridColor,
             },
@@ -1160,17 +1177,20 @@ export default {
       }
       return overlapEnd.diff(overlapStart, 'seconds', true);
     },
-    formatBinLabel(start, unit) {
+    binCapacityHours(bin) {
+      return Math.max(1 / 60, moment(bin.end).diff(moment(bin.start), 'hours', true));
+    },
+    formatBinLabel(start, end, unit) {
+      const displayEnd = moment(end).clone().subtract(1, 'millisecond');
       if (unit === 'hour') {
         return start.format('HH:mm');
       }
-      if (unit === 'week') {
+      if (unit === 'day') {
         return start.format('MMM D');
       }
-      if (unit === 'month') {
-        return start.format('MMM YYYY');
-      }
-      return start.format('MMM D');
+
+      const endFormat = start.isSame(displayEnd, 'year') ? 'MMM D' : 'MMM D, YYYY';
+      return `${start.format('MMM D, YYYY')} - ${displayEnd.format(endFormat)}`;
     },
   },
 };
