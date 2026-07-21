@@ -4,9 +4,42 @@ div.fleet-activity-summary.mb-3
     div
       h5.mb-0 {{ $tr('Summary') }}
       div.text-muted.small(v-if="rangeLabel") {{ rangeLabel }}
-    b-button.ml-auto(size="sm" variant="outline-dark" @click="loadRawEvents" :disabled="loading")
-      icon(name="sync")
-      span.d-none.d-md-inline.ml-1 {{ $tr('Refresh') }}
+    b-button-group.ml-auto
+      b-button(
+        size="sm"
+        variant="outline-dark"
+        :pressed.sync="showFilters"
+      )
+        icon(name="filter")
+        span.d-none.d-md-inline.ml-1
+          | {{ $tr('Filters') }}
+          b-badge.ml-1(pill variant="secondary" v-if="filterCount > 0") {{ filterCount }}
+      b-button(size="sm" variant="outline-dark" @click="loadRawEvents" :disabled="loading")
+        icon(name="sync")
+        span.d-none.d-md-inline.ml-1 {{ $tr('Refresh') }}
+
+  div.fleet-summary-filters.mb-3(v-if="showFilters")
+    div.row
+      div.col-lg-5.mb-2.mb-lg-0
+        label.small.text-muted(for="fleet-summary-search") {{ $tr('Search activity') }}
+        b-form-input#fleet-summary-search(
+          v-model.trim="textFilter"
+          size="sm"
+          type="search"
+          :placeholder="$tr('Filter app, title, URL, device...')"
+        )
+      div.col-lg-7
+        label.small.text-muted.d-block {{ $tr('Toggles') }}
+        b-form-checkbox(v-model="showAfkTime" size="sm")
+          | {{ $tr('Show AFK time') }}
+        b-form-checkbox(
+          v-model="countAudibleBrowserTime"
+          :disabled="showAfkTime"
+          size="sm"
+        )
+          | {{ $tr('Count audible browser tab as active') }}
+    div.fleet-filter-meta.small.text-muted.mt-2(v-if="activeWindowEvents.length > 0")
+      | {{ $tr('Events counted: {count}', { count: filteredWindowEvents.length }) }}
 
   b-alert(v-if="loadError" show variant="danger")
     | {{ loadError }}
@@ -16,6 +49,9 @@ div.fleet-activity-summary.mb-3
 
   b-alert(v-else-if="activeWindowEvents.length === 0" show variant="info")
     | {{ $tr('No activity summary data found for the selected range.') }}
+
+  b-alert(v-else-if="filteredWindowEvents.length === 0" show variant="info")
+    | {{ $tr('No activity summary data matches the current filters.') }}
 
   div.row(v-else)
     div.col-md-6.col-xl-4.mb-3
@@ -83,6 +119,7 @@ import moment from 'moment';
 import { ChartOptions } from 'chart.js';
 import 'chart.js/auto';
 import { Bar } from 'vue-chartjs/legacy';
+import 'vue-awesome/icons/filter';
 import 'vue-awesome/icons/sync';
 
 import { useBucketsStore } from '~/stores/buckets';
@@ -95,6 +132,75 @@ import { detectPreferredTheme } from '~/util/theme';
 
 const CATEGORY_KEY_SEPARATOR = '>>>';
 const UNKNOWN = 'Unknown';
+const BROWSER_APP_NAMES = new Set(
+  [
+    'Google Chrome',
+    'Google-chrome',
+    'chrome.exe',
+    'google-chrome-stable',
+    'Chromium',
+    'Chromium-browser',
+    'chromium-browser',
+    'Chromium-browser-chromium',
+    'chromium.exe',
+    'Firefox',
+    'Firefox.exe',
+    'firefox',
+    'firefox.exe',
+    'Firefox Developer Edition',
+    'Firefox-esr',
+    'Firefox Beta',
+    'Nightly',
+    'LibreWolf-Portable.exe',
+    'LibreWolf',
+    'LibreWolf.exe',
+    'Librewolf',
+    'Librewolf.exe',
+    'Waterfox',
+    'Waterfox.exe',
+    'opera.exe',
+    'Opera',
+    'Brave-browser',
+    'brave-browser',
+    'Brave Browser',
+    'brave.exe',
+    'msedge.exe',
+    'Microsoft Edge',
+    'Microsoft Edge Beta',
+    'Microsoft-Edge-Stable',
+    'Microsoft-edge',
+    'microsoft-edge',
+    'Arc.exe',
+    'Arc',
+    'Vivaldi-stable',
+    'Vivaldi-snapshot',
+    'vivaldi.exe',
+    'Vivaldi',
+    'Orion',
+    'Yandex',
+    'Zen',
+    'Zen Browser',
+    'Zen-browser',
+    'zen.exe',
+    'Floorp',
+    'floorp.exe',
+  ].map(name => name.toLowerCase())
+);
+const BROWSER_APP_TOKENS = [
+  'chrome',
+  'chromium',
+  'firefox',
+  'librewolf',
+  'waterfox',
+  'opera',
+  'brave',
+  'msedge',
+  'vivaldi',
+  'orion',
+  'yandex',
+  'floorp',
+];
+const BROWSER_COPY_FIELDS = ['url', '$domain', 'audible', 'browser_title'];
 
 function hasIdentityValue(value: unknown): boolean {
   if (value === null || value === undefined) {
@@ -136,6 +242,10 @@ export default {
       settingsStore: useSettingsStore(),
       loading: false,
       loadError: '',
+      showFilters: false,
+      showAfkTime: false,
+      countAudibleBrowserTime: true,
+      textFilter: '',
       activeWindowEvents: [],
     };
   },
@@ -169,16 +279,38 @@ export default {
         this.user?.range?.start || '',
         this.user?.range?.end || '',
         this.selectedDeviceIds.join('|'),
+        this.showAfkTime ? 'show-afk' : 'exclude-afk',
+        this.countAudibleBrowserTime ? 'audible-active' : 'audible-ignored',
       ].join('::');
     },
+    normalizedTextFilter() {
+      return String(this.textFilter || '')
+        .trim()
+        .toLowerCase();
+    },
+    filterCount() {
+      return (
+        (this.showAfkTime ? 1 : 0) +
+        (!this.showAfkTime && !this.countAudibleBrowserTime ? 1 : 0) +
+        (this.normalizedTextFilter ? 1 : 0)
+      );
+    },
+    filteredWindowEvents() {
+      if (!this.normalizedTextFilter) {
+        return this.activeWindowEvents;
+      }
+      return this.activeWindowEvents.filter(event =>
+        this.eventMatchesText(event, this.normalizedTextFilter)
+      );
+    },
     topAppEvents() {
-      return this.groupDurationEvents(this.activeWindowEvents, 'app', event => {
+      return this.groupDurationEvents(this.filteredWindowEvents, 'app', event => {
         return event.data.app || event.data.process_name || UNKNOWN;
       });
     },
     topTitleEvents() {
       return this.groupDurationEvents(
-        this.activeWindowEvents,
+        this.filteredWindowEvents,
         'title',
         event => event.data.title || '(no title)',
         event => ({
@@ -192,7 +324,7 @@ export default {
       }
 
       const events = classifyEvents(
-        _.cloneDeep(this.activeWindowEvents),
+        _.cloneDeep(this.filteredWindowEvents),
         this.categoryStore.classes
       );
       return events.map(event => {
@@ -438,7 +570,11 @@ export default {
       );
     },
     isSummaryBucketCandidate(bucket) {
-      if (!this.isWindowBucket(bucket) && bucket?.type !== 'afkstatus') {
+      if (
+        !this.isWindowBucket(bucket) &&
+        bucket?.type !== 'afkstatus' &&
+        !this.isBrowserBucket(bucket)
+      ) {
         return false;
       }
 
@@ -457,7 +593,10 @@ export default {
       return true;
     },
     buildActiveWindowEvents(buckets) {
-      const activeIntervalsBySession = this.buildActiveIntervalsBySession(buckets);
+      const browserEvents = this.buildBrowserEvents(buckets);
+      const activeContext = this.showAfkTime
+        ? { intervalsBySession: new Map(), sessionsWithAfkData: new Set() }
+        : this.buildActiveIntervalsBySession(buckets, browserEvents);
       const events = [];
 
       for (const bucket of buckets || []) {
@@ -476,11 +615,16 @@ export default {
             continue;
           }
 
-          const activeIntervals = activeIntervalsBySession.get(this.sessionKey(identity));
-          const segments =
-            activeIntervals && activeIntervals.length > 0
-              ? this.intersectWithIntervals(interval, activeIntervals)
-              : [interval];
+          const key = this.sessionKey(identity);
+          let segments = [interval];
+          if (!this.showAfkTime) {
+            const activeIntervals = activeContext.intervalsBySession.get(key);
+            if (activeIntervals && activeIntervals.length > 0) {
+              segments = this.intersectWithIntervals(interval, activeIntervals);
+            } else if (activeContext.sessionsWithAfkData.has(key)) {
+              segments = [];
+            }
+          }
 
           for (const segment of segments) {
             const duration = segment.end.diff(segment.start, 'seconds', true);
@@ -508,10 +652,13 @@ export default {
         }
       }
 
-      return _.sortBy(events, event => moment(event.timestamp).valueOf());
+      return _.sortBy(this.enrichWindowSegmentsWithBrowserData(events, browserEvents), event =>
+        moment(event.timestamp).valueOf()
+      );
     },
-    buildActiveIntervalsBySession(buckets) {
+    buildActiveIntervalsBySession(buckets, browserEvents = []) {
       const intervalsBySession = new Map();
+      const sessionsWithAfkData = new Set();
 
       for (const bucket of buckets || []) {
         if (bucket?.type !== 'afkstatus') {
@@ -523,6 +670,8 @@ export default {
           if (!this.matchesIdentity(identity)) {
             continue;
           }
+          const key = this.sessionKey(identity);
+          sessionsWithAfkData.add(key);
           if ((event.data || {}).status !== 'not-afk') {
             continue;
           }
@@ -532,18 +681,227 @@ export default {
             continue;
           }
 
-          const key = this.sessionKey(identity);
           const intervals = intervalsBySession.get(key) || [];
           intervals.push(interval);
           intervalsBySession.set(key, intervals);
         }
       }
 
+      if (this.countAudibleBrowserTime) {
+        this.addAudibleBrowserIntervalsToSessions(
+          buckets,
+          browserEvents,
+          intervalsBySession,
+          sessionsWithAfkData
+        );
+      }
+
       for (const [key, intervals] of intervalsBySession.entries()) {
         intervalsBySession.set(key, this.mergeIntervals(intervals));
       }
 
-      return intervalsBySession;
+      return { intervalsBySession, sessionsWithAfkData };
+    },
+    addAudibleBrowserIntervalsToSessions(
+      buckets,
+      browserEvents,
+      intervalsBySession,
+      sessionsWithAfkData
+    ) {
+      const audibleBrowserIntervals = (browserEvents || [])
+        .filter(event => this.isAudibleBrowserEvent(event))
+        .map(event => this.clipEventInterval(event))
+        .filter(interval => interval);
+
+      if (audibleBrowserIntervals.length === 0) {
+        return;
+      }
+
+      for (const bucket of buckets || []) {
+        if (!this.isWindowBucket(bucket)) {
+          continue;
+        }
+
+        for (const event of bucket.events || []) {
+          const identity = this.eventIdentity(bucket, event);
+          if (!this.matchesIdentity(identity) || !this.isBrowserWindowEvent(event)) {
+            continue;
+          }
+
+          const key = this.sessionKey(identity);
+          if (!sessionsWithAfkData.has(key)) {
+            continue;
+          }
+
+          const windowInterval = this.clipEventInterval(event);
+          if (!windowInterval) {
+            continue;
+          }
+
+          const audibleSegments = this.intersectWithIntervals(
+            windowInterval,
+            audibleBrowserIntervals
+          );
+          if (audibleSegments.length === 0) {
+            continue;
+          }
+
+          const intervals = intervalsBySession.get(key) || [];
+          intervals.push(...audibleSegments);
+          intervalsBySession.set(key, intervals);
+        }
+      }
+    },
+    buildBrowserEvents(buckets) {
+      const events = [];
+
+      for (const bucket of buckets || []) {
+        if (!this.isBrowserBucket(bucket)) {
+          continue;
+        }
+
+        for (const event of bucket.events || []) {
+          const interval = this.clipEventInterval(event);
+          if (!interval) {
+            continue;
+          }
+
+          const data = { ...(event.data || {}) };
+          if (data.title && !data.browser_title) {
+            data.browser_title = data.title;
+          }
+          if (data.url && !data.$domain) {
+            data.$domain = this.domainFromUrl(data.url);
+          }
+
+          events.push({
+            ...event,
+            timestamp: interval.start.format(),
+            duration: interval.end.diff(interval.start, 'seconds', true),
+            data,
+          });
+        }
+      }
+
+      return _.sortBy(events, event => moment(event.timestamp).valueOf());
+    },
+    enrichWindowSegmentsWithBrowserData(windowEvents, browserEvents) {
+      if (!browserEvents || browserEvents.length === 0) {
+        return windowEvents;
+      }
+
+      return _.flatMap(windowEvents, event => {
+        if (!this.isBrowserWindowEvent(event)) {
+          return [event];
+        }
+        return this.enrichWindowSegmentWithBrowserData(event, browserEvents);
+      });
+    },
+    enrichWindowSegmentWithBrowserData(event, browserEvents) {
+      const baseStart = moment(event.timestamp);
+      const baseEnd = baseStart.clone().add(Number(event.duration || 0), 'seconds');
+      const boundaries = new Set([baseStart.valueOf(), baseEnd.valueOf()]);
+      const overlaps = [];
+
+      for (const browserEvent of browserEvents) {
+        const browserStart = moment(browserEvent.timestamp);
+        const browserEnd = browserStart.clone().add(Number(browserEvent.duration || 0), 'seconds');
+
+        if (browserEnd.isSameOrBefore(baseStart)) {
+          continue;
+        }
+        if (browserStart.isSameOrAfter(baseEnd)) {
+          break;
+        }
+
+        const start = moment.max(baseStart, browserStart);
+        const end = moment.min(baseEnd, browserEnd);
+        if (!end.isAfter(start)) {
+          continue;
+        }
+
+        boundaries.add(start.valueOf());
+        boundaries.add(end.valueOf());
+        overlaps.push({
+          event: browserEvent,
+          start: browserStart,
+          end: browserEnd,
+        });
+      }
+
+      if (overlaps.length === 0) {
+        return [event];
+      }
+
+      const points = Array.from(boundaries).sort((left, right) => Number(left) - Number(right));
+      const segments = [];
+
+      for (let index = 0; index < points.length - 1; index += 1) {
+        const start = moment(Number(points[index]));
+        const end = moment(Number(points[index + 1]));
+        const browserEvent = this.pickBrowserEventForSegment(start, end, overlaps);
+        const data = { ...(event.data || {}) };
+
+        if (browserEvent) {
+          this.copyBrowserData(data, browserEvent.data || {});
+        }
+
+        this.pushMergedSegment(segments, {
+          ...event,
+          timestamp: start.format(),
+          duration: end.diff(start, 'seconds', true),
+          data,
+        });
+      }
+
+      return segments;
+    },
+    pickBrowserEventForSegment(start, end, overlaps) {
+      let picked = null;
+
+      for (const overlap of overlaps) {
+        if (!end.isAfter(overlap.start) || !start.isBefore(overlap.end)) {
+          continue;
+        }
+        if (!picked || moment(overlap.event.timestamp).isAfter(moment(picked.timestamp))) {
+          picked = overlap.event;
+        }
+      }
+
+      return picked;
+    },
+    copyBrowserData(targetData, browserData) {
+      const data = { ...browserData };
+      if (data.title && !data.browser_title) {
+        data.browser_title = data.title;
+      }
+      if (data.url && !data.$domain) {
+        data.$domain = this.domainFromUrl(data.url);
+      }
+
+      for (const key of BROWSER_COPY_FIELDS) {
+        if (data[key] !== undefined && targetData[key] === undefined) {
+          targetData[key] = data[key];
+        }
+      }
+    },
+    pushMergedSegment(segments, segment) {
+      const last = segments[segments.length - 1];
+      const segmentEnd = moment(segment.timestamp).add(Number(segment.duration || 0), 'seconds');
+      if (
+        last &&
+        moment(last.timestamp)
+          .add(Number(last.duration || 0), 'seconds')
+          .isSame(moment(segment.timestamp)) &&
+        _.isEqual(last.data, segment.data)
+      ) {
+        last.duration += segment.duration;
+        return;
+      }
+
+      if (segmentEnd.isAfter(moment(segment.timestamp))) {
+        segments.push(segment);
+      }
     },
     clipEventInterval(event) {
       const eventStart = moment(event.timestamp);
@@ -617,6 +975,62 @@ export default {
         !String(bucket?.id || '').startsWith('aw-watcher-android')
       );
     },
+    isBrowserBucket(bucket) {
+      return bucket?.type === 'web.tab.current';
+    },
+    isAudibleBrowserEvent(event) {
+      const audible = (event.data || {}).audible;
+      return audible === true || audible === 'true' || audible === 1;
+    },
+    isBrowserWindowEvent(event) {
+      return this.isBrowserApp(event.data?.app || event.data?.process_name || '');
+    },
+    isBrowserApp(app) {
+      const normalized = String(app || '')
+        .trim()
+        .toLowerCase();
+      if (!normalized) {
+        return false;
+      }
+      if (BROWSER_APP_NAMES.has(normalized)) {
+        return true;
+      }
+      return BROWSER_APP_TOKENS.some(token => normalized.includes(token));
+    },
+    domainFromUrl(url) {
+      try {
+        return new URL(url).hostname;
+      } catch (_error) {
+        return '';
+      }
+    },
+    eventMatchesText(event, query) {
+      const values = [];
+      this.collectSearchValues(event?.data || {}, values);
+      return values.join(' ').toLowerCase().includes(query);
+    },
+    collectSearchValues(value, values) {
+      if (value === null || value === undefined) {
+        return;
+      }
+
+      if (['string', 'number', 'boolean'].includes(typeof value)) {
+        values.push(String(value));
+        return;
+      }
+
+      if (Array.isArray(value)) {
+        value.forEach(item => this.collectSearchValues(item, values));
+        return;
+      }
+
+      if (typeof value === 'object') {
+        Object.keys(value).forEach(key => {
+          values.push(key);
+          this.collectSearchValues(value[key], values);
+        });
+      }
+    },
     groupDurationEvents(events, key, labelFunc, extraDataFunc = (_event: any) => ({})) {
       const grouped = new Map();
 
@@ -680,6 +1094,17 @@ export default {
   border: 1px solid rgba(127, 127, 127, 0.2);
   border-radius: 0.45rem;
   background: #fbfcfe;
+}
+
+.fleet-summary-filters {
+  padding: 0.75rem;
+  border: 1px solid rgba(127, 127, 127, 0.2);
+  border-radius: 0.45rem;
+  background: #f5f7fb;
+}
+
+.fleet-filter-meta {
+  line-height: 1.4;
 }
 
 .fleet-summary-panel--sunburst {

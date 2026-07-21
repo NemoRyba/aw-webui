@@ -78,7 +78,13 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
       'Für die gewählten Filter wurden keine Zeitachsen-Daten gefunden.',
     'No activity summary data found for the selected range.':
       'Für den gewählten Zeitraum wurden keine Aktivitätsübersichtsdaten gefunden.',
+    'No activity summary data matches the current filters.':
+      'Keine Aktivitätsübersichtsdaten entsprechen den aktuellen Filtern.',
     'Unable to load activity summary': 'Aktivitätsübersicht konnte nicht geladen werden',
+    'Search activity': 'Aktivität suchen',
+    'Filter app, title, URL, device...': 'App, Titel, URL, Gerät filtern...',
+    'Show AFK time': 'AFK-Zeit anzeigen',
+    'Events counted: {count}': 'Gezählte Ereignisse: {count}',
     'No data': 'Keine Daten',
     'Last updated': 'Zuletzt aktualisiert',
     'Sign in to continue': 'Zum Fortfahren anmelden',

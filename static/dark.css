@@ -240,7 +240,16 @@ div[style="color: rgb(85, 85, 85); font-size: 0.9em;"] {
   border-color: #282c32 !important;
 }
 
+.fleet-summary-filters {
+  background-color: #151922 !important;
+  border-color: #282c32 !important;
+}
+
 .fleet-summary-empty {
+  color: #9aa3af !important;
+}
+
+.fleet-filter-meta {
   color: #9aa3af !important;
 }
 
