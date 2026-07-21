@@ -2,7 +2,13 @@
 div
   h2 {{ $tr('Timeline') }}
 
-  input-timeinterval(v-model="daterange", :defaultDuration="timeintervalDefaultDuration", :maxDuration="maxDuration").mb-3
+  timeline-range-navigator(
+    v-model="daterange"
+    :defaultDuration="timeintervalDefaultDuration"
+    :maxDuration="maxDuration"
+    :eventCountsByDay="eventCountsByDay"
+    @focus-range="focusTimelineRange"
+  ).mb-3
 
   div.d-flex.flex-wrap.align-items-center.mb-3
     div.d-inline-block.border.rounded.p-2.mr-2.mb-2
@@ -54,6 +60,7 @@ div
         :buckets="section.buckets"
         :showRowLabels='true'
         :queriedInterval="daterange"
+        :windowInterval="timelineWindowInterval"
         :swimlane="swimlane"
         :updateTimelineWindow='updateTimelineWindow'
       )
@@ -67,23 +74,28 @@ div
 
 <script lang="ts">
 import _ from 'lodash';
+import moment from 'moment';
 import { useSettingsStore } from '~/stores/settings';
 import { useBucketsStore } from '~/stores/buckets';
 import { getBucketIdentity } from '~/util/bucketIdentity';
 
 export default {
   name: 'Timeline',
+  components: {
+    'timeline-range-navigator': () => import('~/components/TimelineRangeNavigator.vue'),
+  },
   data() {
     return {
       all_buckets: null,
       daterange: null,
-      maxDuration: 31 * 24 * 60 * 60,
+      maxDuration: 10 * 365 * 24 * 60 * 60,
       filter_username: null,
       filter_device_id: null,
       filter_duration: null,
       swimlane: null,
       selectedWatcherKeys: [],
       updateTimelineWindow: true,
+      timelineWindowInterval: null,
     };
   },
   computed: {
@@ -304,10 +316,23 @@ export default {
     num_events() {
       return _.sumBy(this.timelineSections, (section: any) => section.eventCount);
     },
+    eventCountsByDay() {
+      const counts = {};
+
+      for (const bucket of this.filteredBuckets) {
+        for (const event of bucket.events || []) {
+          const day = moment(event.timestamp).format('YYYY-MM-DD');
+          counts[day] = (counts[day] || 0) + 1;
+        }
+      }
+
+      return counts;
+    },
   },
   watch: {
     daterange() {
       this.updateTimelineWindow = true;
+      this.timelineWindowInterval = null;
       this.getBuckets();
     },
     filter_username() {
@@ -361,6 +386,10 @@ export default {
     },
     selectAllWatchers() {
       this.selectedWatcherKeys = this.watcherOptions.map(option => option.value);
+    },
+    focusTimelineRange(interval) {
+      this.timelineWindowInterval = interval;
+      this.updateTimelineWindow = true;
     },
     syncSelectedWatchers() {
       const available = this.watcherOptions.map(option => option.value);

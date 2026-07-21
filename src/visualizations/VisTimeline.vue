@@ -129,6 +129,7 @@ export default {
     events: { type: Array },
     showRowLabels: { type: Boolean },
     queriedInterval: { type: Array },
+    windowInterval: { type: Array },
     showQueriedInterval: { type: Boolean },
     swimlane: { type: String },
     updateTimelineWindow: { type: Boolean },
@@ -222,6 +223,9 @@ export default {
       }
 
       this.update();
+    },
+    windowInterval() {
+      this.applyTimelineWindow();
     },
   },
   mounted() {
@@ -374,16 +378,7 @@ export default {
         }
 
         if (this.updateTimelineWindow) {
-          const start =
-            (this.queriedInterval && this.queriedInterval[0]) ||
-            _.min(_.map(items, item => item.start));
-          const end =
-            (this.queriedInterval && this.queriedInterval[1]) ||
-            _.max(_.map(items, item => item.end));
-          this.options.min = start;
-          this.options.max = end;
-          this.timeline.setOptions(this.options);
-          this.timeline.setWindow(start, end);
+          this.applyTimelineWindow(items);
         }
 
         // Hide buckets with no events in the queried range
@@ -401,10 +396,7 @@ export default {
         }
       } else {
         // update the timeline range
-        this.options.min = this.queriedInterval[0];
-        this.options.max = this.queriedInterval[1];
-        this.timeline.setOptions(this.options);
-        this.timeline.setWindow(this.queriedInterval[0], this.queriedInterval[1]);
+        this.applyTimelineWindow();
 
         // clear the data
         this.timeline.setData({ groups: [], items: [] });
@@ -413,6 +405,29 @@ export default {
         this.detailItemId = null;
         this.detailHtml = '';
       }
+    },
+    applyTimelineWindow(items = []) {
+      if (!this.timeline) {
+        return;
+      }
+
+      const fullStart =
+        (this.queriedInterval && this.queriedInterval[0]) ||
+        _.min(_.map(items, item => item.start));
+      const fullEnd =
+        (this.queriedInterval && this.queriedInterval[1]) || _.max(_.map(items, item => item.end));
+
+      if (!fullStart || !fullEnd) {
+        return;
+      }
+
+      const windowStart = (this.windowInterval && this.windowInterval[0]) || fullStart;
+      const windowEnd = (this.windowInterval && this.windowInterval[1]) || fullEnd;
+
+      this.options.min = fullStart;
+      this.options.max = fullEnd;
+      this.timeline.setOptions(this.options);
+      this.timeline.setWindow(windowStart, windowEnd);
     },
   },
 };
