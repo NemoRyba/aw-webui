@@ -54,6 +54,19 @@ div.fleet-activity-summary.mb-3
     | {{ $tr('No activity summary data matches the current filters.') }}
 
   div.row(v-else)
+    div.col-12.mb-3
+      div.fleet-summary-panel.fleet-summary-panel--timeline
+        h6.mb-3 {{ $tr('Timeline (barchart)') }}
+        div.fleet-chart-scroll
+          div.fleet-chart(:style="{ minWidth: timelineChartMinWidth }")
+            bar(
+              v-if="timelineDatasets.length > 0"
+              :chart-data="timelineChartData"
+              :chart-options="timelineChartOptions"
+              :height="440"
+            )
+            div.fleet-summary-empty(v-else) {{ $tr('No data') }}
+
     div.col-md-6.col-xl-4.mb-3
       div.fleet-summary-panel
         h6.mb-3 {{ $tr('Top Applications') }}
@@ -74,18 +87,6 @@ div.fleet-activity-summary.mb-3
           :colorfunc="event => event.data.app"
           with_limit
         )
-
-    div.col-md-12.col-xl-4.mb-3
-      div.fleet-summary-panel
-        h6.mb-3 {{ $tr('Timeline (barchart)') }}
-        div.fleet-chart
-          bar(
-            v-if="timelineDatasets.length > 0"
-            :chart-data="timelineChartData"
-            :chart-options="timelineChartOptions"
-            :height="330"
-          )
-          div.fleet-summary-empty(v-else) {{ $tr('No data') }}
 
     div.col-md-6.col-xl-4.mb-3
       div.fleet-summary-panel
@@ -457,6 +458,11 @@ export default {
         labels: this.timelineBins.map(bin => bin.label),
         datasets: this.timelineDatasets,
       };
+    },
+    timelineChartMinWidth() {
+      const binCount = Math.max(1, this.timelineBins.length);
+      const pxPerBin = binCount > 90 ? 34 : binCount > 45 ? 42 : binCount > 20 ? 52 : 72;
+      return `${Math.max(1040, binCount * pxPerBin)}px`;
     },
     activeTheme() {
       const theme = this.settingsStore.theme || 'auto';
@@ -1134,6 +1140,10 @@ export default {
   background: #fbfcfe;
 }
 
+.fleet-summary-panel--timeline {
+  min-height: 32rem;
+}
+
 .fleet-summary-filters {
   padding: 0.75rem;
   border: 1px solid rgba(127, 127, 127, 0.2);
@@ -1149,8 +1159,15 @@ export default {
   overflow: hidden;
 }
 
+.fleet-chart-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.35rem;
+}
+
 .fleet-chart {
-  height: 22rem;
+  height: 28rem;
 }
 
 .fleet-summary-empty {
