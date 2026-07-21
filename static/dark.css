@@ -230,6 +230,20 @@ div[style="color: rgb(85, 85, 85); font-size: 0.9em;"] {
   background-color: #1a1d24 !important;
 }
 
+.fleet-activity-summary {
+  background-color: #1a1d24 !important;
+  border-color: #282c32 !important;
+}
+
+.fleet-summary-panel {
+  background-color: #151922 !important;
+  border-color: #282c32 !important;
+}
+
+.fleet-summary-empty {
+  color: #9aa3af !important;
+}
+
 [aria-sort="none"] {
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='101' height='101' preserveAspectRatio='none' fill='white' opacity='.4'%3E%3Cpath d='m51 1 25 23 24 22H1l25-22zm0 100 25-23 24-22H1l25 22z'/%3E%3C/svg%3E") !important;
 }

@@ -87,9 +87,11 @@ import 'vue-awesome/icons/sync';
 
 import { useBucketsStore } from '~/stores/buckets';
 import { useCategoryStore } from '~/stores/categories';
+import { useSettingsStore } from '~/stores/settings';
 import { build_category_hierarchy, classifyEvents } from '~/util/classes';
 import { getBucketIdentity } from '~/util/bucketIdentity';
 import { seconds_to_duration } from '~/util/time';
+import { detectPreferredTheme } from '~/util/theme';
 
 const CATEGORY_KEY_SEPARATOR = '>>>';
 const UNKNOWN = 'Unknown';
@@ -131,6 +133,7 @@ export default {
     return {
       bucketsStore: useBucketsStore(),
       categoryStore: useCategoryStore(),
+      settingsStore: useSettingsStore(),
       loading: false,
       loadError: '',
       activeWindowEvents: [],
@@ -317,6 +320,16 @@ export default {
         datasets: this.timelineDatasets,
       };
     },
+    activeTheme() {
+      const theme = this.settingsStore.theme || 'auto';
+      return theme === 'auto' ? detectPreferredTheme() : theme;
+    },
+    chartTextColor() {
+      return this.activeTheme === 'dark' ? '#e9ebf0' : '#3c4257';
+    },
+    chartGridColor() {
+      return this.activeTheme === 'dark' ? 'rgba(233, 235, 240, 0.18)' : 'rgba(0, 0, 0, 0.1)';
+    },
     timelineChartOptions(): ChartOptions {
       const formatDuration = value => seconds_to_duration(Number(value || 0) * 3600);
       return {
@@ -336,17 +349,28 @@ export default {
             position: 'bottom',
             labels: {
               boxWidth: 12,
+              color: this.chartTextColor,
             },
           },
         },
         scales: {
           x: {
             stacked: true,
+            ticks: {
+              color: this.chartTextColor,
+            },
+            grid: {
+              color: this.chartGridColor,
+            },
           },
           y: {
             stacked: true,
             min: 0,
+            grid: {
+              color: this.chartGridColor,
+            },
             ticks: {
+              color: this.chartTextColor,
               callback(value) {
                 const hours = Number(value || 0);
                 return hours >= 1 ? `${hours}h` : `${Math.round(hours * 60)}m`;
