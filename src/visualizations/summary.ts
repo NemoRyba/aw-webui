@@ -9,6 +9,7 @@ import { seconds_to_duration } from '~/util/time';
 import { IEvent } from '~/util/interfaces';
 
 const textColor = '#333';
+const AFK_HATCH_COLOR = '#ff4d4f';
 
 function create(container: HTMLElement) {
   // Clear element
@@ -45,6 +46,7 @@ interface Entry {
     duration: number;
     label?: string;
   }[];
+  afkDuration?: number;
   colorKey?: string;
   link?: string;
 }
@@ -93,6 +95,21 @@ function segmentTooltip(app: Entry, segments) {
   );
 }
 
+function normalizedAfkDuration(app: Entry): number {
+  const duration = Number(app.duration || 0);
+  return Math.max(0, Math.min(Number(app.afkDuration || 0), duration));
+}
+
+function afkTooltip(app: Entry) {
+  const afkDuration = normalizedAfkDuration(app);
+  if (afkDuration <= 0 || app.duration <= 0) {
+    return '';
+  }
+
+  const percent = Math.round((afkDuration / app.duration) * 100);
+  return `\nAFK time: ${seconds_to_duration(afkDuration)} (${percent}%)`;
+}
+
 function update(container: HTMLElement, apps: Entry[]) {
   // No apps, sets status to "No data"
   if (apps.length <= 0) {
@@ -113,6 +130,24 @@ function update(container: HTMLElement, apps: Entry[]) {
   const longest_duration = apps[0].duration;
   const clipPrefix = `summary_clip_${Math.random().toString(36).slice(2)}_`;
   const defs = svg.append('defs');
+  const hatchPatternId = `${clipPrefix}afk_hatch`;
+  const hatchPattern = defs
+    .append('pattern')
+    .attr('id', hatchPatternId)
+    .attr('patternUnits', 'userSpaceOnUse')
+    .attr('width', 10)
+    .attr('height', 10)
+    .attr('patternTransform', 'rotate(45)');
+  hatchPattern
+    .append('line')
+    .attr('x1', 0)
+    .attr('y1', 0)
+    .attr('x2', 0)
+    .attr('y2', 10)
+    .style('stroke', AFK_HATCH_COLOR)
+    .style('stroke-width', 2)
+    .style('opacity', 0.9);
+
   _.each(apps, function (app, i) {
     // TODO: Expand on click and list titles
 
@@ -124,6 +159,7 @@ function update(container: HTMLElement, apps: Entry[]) {
     const appcolor = entryColor(app);
     const segments = normalizedColorSegments(app, appcolor);
     const segmentTotal = Math.max(Number(app.duration || 0), _.sumBy(segments, 'duration')) || 1;
+    const afkDuration = normalizedAfkDuration(app);
 
     // Add a parent <a> element if link is set
     const a = app.link ? svg.append('a').attr('href', app.link) : svg;
@@ -144,7 +180,11 @@ function update(container: HTMLElement, apps: Entry[]) {
       });
 
     eg.append('title').text(
-      app.hovertext + '\n' + seconds_to_duration(app.duration) + segmentTooltip(app, segments)
+      app.hovertext +
+        '\n' +
+        seconds_to_duration(app.duration) +
+        afkTooltip(app) +
+        segmentTooltip(app, segments)
     );
 
     const clipId = `${clipPrefix}${i}`;
@@ -173,6 +213,22 @@ function update(container: HTMLElement, apps: Entry[]) {
         .attr('height', barHeight)
         .style('fill', segment.color);
       segmentOffsetPercent += segmentWidthPercent;
+    }
+
+    if (afkDuration > 0) {
+      const afkWidthPercent = widthPercent * (afkDuration / Number(app.duration || 1));
+      const afkXPercent = widthPercent - afkWidthPercent;
+      bar
+        .append('rect')
+        .attr('class', 'summary-afk-overlay')
+        .attr('x', afkXPercent + '%')
+        .attr('y', curr_y)
+        .attr('width', afkWidthPercent + '%')
+        .attr('height', barHeight)
+        .style('fill', `url(#${hatchPatternId})`)
+        .style('stroke', AFK_HATCH_COLOR)
+        .style('stroke-width', 1.5)
+        .style('pointer-events', 'none');
     }
 
     // App name
@@ -220,6 +276,7 @@ function updateSummedEvents(
       duration: e.duration,
       color: e.data['$color'],
       colorSegments: e.data['$colorSegments'],
+      afkDuration: e.data['$afkDuration'],
       colorKey: colorKeyFunc(e),
       link: linkKeyFunc(e),
     } as Entry;

@@ -606,9 +606,7 @@ export default {
     },
     buildActiveWindowEvents(buckets) {
       const browserEvents = this.buildBrowserEvents(buckets);
-      const activeContext = this.showAfkTime
-        ? { intervalsBySession: new Map(), sessionsWithAfkData: new Set() }
-        : this.buildActiveIntervalsBySession(buckets, browserEvents);
+      const activeContext = this.buildActiveIntervalsBySession(buckets, browserEvents);
       const events = [];
 
       for (const bucket of buckets || []) {
@@ -628,9 +626,15 @@ export default {
           }
 
           const key = this.sessionKey(identity);
-          let segments = [interval];
-          if (!this.showAfkTime) {
-            const activeIntervals = activeContext.intervalsBySession.get(key);
+          const activeIntervals = activeContext.intervalsBySession.get(key);
+          let segments = [{ ...interval, afk: false }];
+          if (this.showAfkTime) {
+            segments = this.splitIntervalByActiveState(
+              interval,
+              activeIntervals,
+              activeContext.sessionsWithAfkData.has(key)
+            );
+          } else {
             if (activeIntervals && activeIntervals.length > 0) {
               segments = this.intersectWithIntervals(interval, activeIntervals);
             } else if (activeContext.sessionsWithAfkData.has(key)) {
@@ -652,6 +656,7 @@ export default {
               session_id: identity.sessionId,
               app: event.data?.app || event.data?.process_name || UNKNOWN,
               title: event.data?.title || '(no title)',
+              $afk: Boolean(segment.afk),
             };
 
             events.push({
@@ -938,6 +943,47 @@ export default {
       }
       return segments;
     },
+    splitIntervalByActiveState(interval, activeIntervals = [], hasAfkData = false) {
+      if (!hasAfkData) {
+        return [{ ...interval, afk: false }];
+      }
+      if (!activeIntervals || activeIntervals.length === 0) {
+        return [{ ...interval, afk: true }];
+      }
+
+      const boundaries = new Set([interval.start.valueOf(), interval.end.valueOf()]);
+      for (const activeInterval of activeIntervals) {
+        const start = moment.max(interval.start, activeInterval.start);
+        const end = moment.min(interval.end, activeInterval.end);
+        if (end.isAfter(start)) {
+          boundaries.add(start.valueOf());
+          boundaries.add(end.valueOf());
+        }
+      }
+
+      const points = Array.from(boundaries).sort((left, right) => Number(left) - Number(right));
+      const segments = [];
+
+      for (let index = 0; index < points.length - 1; index += 1) {
+        const start = moment(Number(points[index]));
+        const end = moment(Number(points[index + 1]));
+        if (!end.isAfter(start)) {
+          continue;
+        }
+
+        const active = activeIntervals.some(activeInterval => {
+          return this.overlapSeconds(start, end, activeInterval.start, activeInterval.end) > 0;
+        });
+        const previous = segments[segments.length - 1];
+        if (previous && previous.afk === !active && previous.end.isSame(start)) {
+          previous.end = end;
+          continue;
+        }
+        segments.push({ start, end, afk: !active });
+      }
+
+      return segments;
+    },
     mergeIntervals(intervals) {
       const sortedIntervals = _.sortBy(intervals, interval => interval.start.valueOf());
       const merged = [];
@@ -1056,8 +1102,13 @@ export default {
             ...extraDataFunc(event),
           },
           colorSegmentsByCategory: new Map(),
+          afkDuration: 0,
         };
-        item.duration += Number(event.duration || 0);
+        const duration = Number(event.duration || 0);
+        item.duration += duration;
+        if (event.data?.$afk) {
+          item.afkDuration += duration;
+        }
         this.addColorSegmentData(item, event);
         grouped.set(label, item);
       }
@@ -1072,7 +1123,11 @@ export default {
             );
             item.data.$color = item.data.$colorSegments[0].color;
           }
+          if (item.afkDuration > 0) {
+            item.data.$afkDuration = item.afkDuration;
+          }
           delete item.colorSegmentsByCategory;
+          delete item.afkDuration;
           return item;
         }),
         ['duration'],
