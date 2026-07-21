@@ -230,6 +230,51 @@ div[style="color: rgb(85, 85, 85); font-size: 0.9em;"] {
   background-color: #1a1d24 !important;
 }
 
+.timeline-range-navigator {
+  background-color: #1a1d24 !important;
+  border-color: #282c32 !important;
+}
+
+.timeline-range-control label,
+.timeline-range-summary__duration,
+.timeline-zoom-toolbar__label,
+.timeline-density__header {
+  color: #9aa3af !important;
+}
+
+.timeline-range-summary__label {
+  color: #e9ebf0 !important;
+}
+
+.timeline-density__track {
+  background-color: #151922 !important;
+  border-color: #282c32 !important;
+}
+
+.timeline-density__bar {
+  background-color: #5b8cff !important;
+}
+
+.timeline-density__bar:hover {
+  background-color: #79a4ff !important;
+}
+
+.timeline-density__bar--empty {
+  background-color: #3a414c !important;
+}
+
+.timeline-density__bar--empty:hover {
+  background-color: #3a414c !important;
+}
+
+.timeline-density__bar--focused {
+  background-color: #39b980 !important;
+}
+
+.timeline-density__bar--focused:hover {
+  background-color: #50d698 !important;
+}
+
 .fleet-activity-summary {
   background-color: #1a1d24 !important;
   border-color: #282c32 !important;
