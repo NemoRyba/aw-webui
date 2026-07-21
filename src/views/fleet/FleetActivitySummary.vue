@@ -304,13 +304,13 @@ export default {
       );
     },
     topAppEvents() {
-      return this.groupDurationEvents(this.filteredWindowEvents, 'app', event => {
+      return this.groupDurationEvents(this.summaryWindowEvents, 'app', event => {
         return event.data.app || event.data.process_name || UNKNOWN;
       });
     },
     topTitleEvents() {
       return this.groupDurationEvents(
-        this.filteredWindowEvents,
+        this.summaryWindowEvents,
         'title',
         event => event.data.title || '(no title)',
         event => ({
@@ -334,6 +334,12 @@ export default {
         event.data.$score = this.categoryStore.get_category_score(category);
         return event;
       });
+    },
+    summaryWindowEvents() {
+      if (this.categorizedWindowEvents.length > 0 || this.filteredWindowEvents.length === 0) {
+        return this.categorizedWindowEvents;
+      }
+      return this.filteredWindowEvents;
     },
     topCategoryEvents() {
       return this.groupDurationEvents(this.categorizedWindowEvents, '$category', event => {
@@ -1043,12 +1049,44 @@ export default {
             [key]: label,
             ...extraDataFunc(event),
           },
+          colorSegmentsByCategory: new Map(),
         };
         item.duration += Number(event.duration || 0);
+        this.addColorSegmentData(item, event);
         grouped.set(label, item);
       }
 
-      return _.orderBy(Array.from(grouped.values()), ['duration'], ['desc']);
+      return _.orderBy(
+        Array.from(grouped.values()).map(item => {
+          if (item.colorSegmentsByCategory.size > 0) {
+            item.data.$colorSegments = _.orderBy(
+              Array.from(item.colorSegmentsByCategory.values()),
+              ['duration'],
+              ['desc']
+            );
+            item.data.$color = item.data.$colorSegments[0].color;
+          }
+          delete item.colorSegmentsByCategory;
+          return item;
+        }),
+        ['duration'],
+        ['desc']
+      );
+    },
+    addColorSegmentData(groupedItem, event) {
+      const category = event.data?.$category;
+      if (!category || category.length === 0) {
+        return;
+      }
+
+      const key = categoryKey(category);
+      const existing = groupedItem.colorSegmentsByCategory.get(key) || {
+        label: category.join(' > '),
+        color: event.data.$color || this.categoryStore.get_category_color(category),
+        duration: 0,
+      };
+      existing.duration += Number(event.duration || 0);
+      groupedItem.colorSegmentsByCategory.set(key, existing);
     },
     categoryName(event) {
       return (event.data.$category || ['Uncategorized']).join(' > ');

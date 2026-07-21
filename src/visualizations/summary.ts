@@ -40,8 +40,57 @@ interface Entry {
   hovertext: string;
   duration: number;
   color?: string;
+  colorSegments?: {
+    color: string;
+    duration: number;
+    label?: string;
+  }[];
   colorKey?: string;
   link?: string;
+}
+
+function entryColor(app: Entry): string {
+  return app.color || getCategoryColorFromString(app.colorKey || app.name);
+}
+
+function normalizedColorSegments(app: Entry, fallbackColor: string) {
+  const segments = (app.colorSegments || [])
+    .filter(segment => segment && segment.duration > 0 && segment.color)
+    .map(segment => ({
+      ...segment,
+      duration: Number(segment.duration || 0),
+    }));
+
+  const segmentDuration = _.sumBy(segments, 'duration');
+  const remainder = Math.max(0, Number(app.duration || 0) - segmentDuration);
+  if (remainder > 0) {
+    segments.push({
+      color: fallbackColor,
+      duration: remainder,
+      label: 'Other',
+    });
+  }
+
+  return segments;
+}
+
+function segmentTooltip(app: Entry, segments) {
+  if (!segments || segments.length <= 1) {
+    return '';
+  }
+
+  const segmentTotal = Math.max(Number(app.duration || 0), _.sumBy(segments, 'duration')) || 1;
+  return (
+    '\n\n' +
+    segments
+      .map(segment => {
+        const percent = Math.round((segment.duration / segmentTotal) * 100);
+        return `${segment.label || 'Other'}: ${percent}% (${seconds_to_duration(
+          segment.duration
+        )})`;
+      })
+      .join('\n')
+  );
 }
 
 function update(container: HTMLElement, apps: Entry[]) {
@@ -62,15 +111,19 @@ function update(container: HTMLElement, apps: Entry[]) {
 
   let curr_y = 0;
   const longest_duration = apps[0].duration;
+  const clipPrefix = `summary_clip_${Math.random().toString(36).slice(2)}_`;
+  const defs = svg.append('defs');
   _.each(apps, function (app, i) {
     // TODO: Expand on click and list titles
 
     // Variables
-    const width = (app.duration / longest_duration) * 100 + '%';
+    const widthPercent = (app.duration / longest_duration) * 100;
+    const width = widthPercent + '%';
     const barHeight = 46;
     const textSize = 14;
-    const appcolor = app.color || getCategoryColorFromString(app.colorKey || app.name);
-    const hovercolor = Color(appcolor).darken(0.1).hex();
+    const appcolor = entryColor(app);
+    const segments = normalizedColorSegments(app, appcolor);
+    const segmentTotal = Math.max(Number(app.duration || 0), _.sumBy(segments, 'duration')) || 1;
 
     // Add a parent <a> element if link is set
     const a = app.link ? svg.append('a').attr('href', app.link) : svg;
@@ -79,23 +132,48 @@ function update(container: HTMLElement, apps: Entry[]) {
     const eg = a.append('g');
     eg.attr('id', 'summary_' + i)
       .on('mouseover', function () {
-        eg.select('rect').style('fill', hovercolor);
+        eg.selectAll('.summary-bar-segment').style('fill', function () {
+          const color = d3.select(this).attr('data-color') || appcolor;
+          return Color(color).darken(0.1).hex();
+        });
       })
       .on('mouseout', function () {
-        eg.select('rect').style('fill', appcolor);
+        eg.selectAll('.summary-bar-segment').style('fill', function () {
+          return d3.select(this).attr('data-color') || appcolor;
+        });
       });
 
-    eg.append('title').text(app.hovertext + '\n' + seconds_to_duration(app.duration));
+    eg.append('title').text(
+      app.hovertext + '\n' + seconds_to_duration(app.duration) + segmentTooltip(app, segments)
+    );
 
-    // Color box background
-    eg.append('rect')
+    const clipId = `${clipPrefix}${i}`;
+    defs
+      .append('clipPath')
+      .attr('id', clipId)
+      .append('rect')
       .attr('x', 0)
       .attr('y', curr_y)
       .attr('rx', 5)
       .attr('ry', 5)
       .attr('width', width)
-      .attr('height', barHeight)
-      .style('fill', appcolor);
+      .attr('height', barHeight);
+
+    const bar = eg.append('g').attr('clip-path', `url(#${clipId})`);
+    let segmentOffsetPercent = 0;
+    for (const segment of segments) {
+      const segmentWidthPercent = widthPercent * (segment.duration / segmentTotal);
+      bar
+        .append('rect')
+        .attr('class', 'summary-bar-segment')
+        .attr('data-color', segment.color)
+        .attr('x', segmentOffsetPercent + '%')
+        .attr('y', curr_y)
+        .attr('width', segmentWidthPercent + '%')
+        .attr('height', barHeight)
+        .style('fill', segment.color);
+      segmentOffsetPercent += segmentWidthPercent;
+    }
 
     // App name
     eg.append('text')
@@ -141,6 +219,7 @@ function updateSummedEvents(
       hovertext: hoverKeyFunc(e),
       duration: e.duration,
       color: e.data['$color'],
+      colorSegments: e.data['$colorSegments'],
       colorKey: colorKeyFunc(e),
       link: linkKeyFunc(e),
     } as Entry;
