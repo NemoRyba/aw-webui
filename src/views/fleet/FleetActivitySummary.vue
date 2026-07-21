@@ -386,14 +386,18 @@ export default {
       const maxBins = unit === 'day' ? 400 : 240;
 
       while (cursor.isBefore(this.rangeEnd) && bins.length < maxBins) {
-        const binStart = cursor.clone();
-        const binEnd = cursor.clone().add(1, unit);
-        bins.push({
-          start: binStart,
-          end: binEnd,
-          label: this.formatBinLabel(binStart, binEnd, unit),
-        });
-        cursor = binEnd;
+        const rawBinStart = cursor.clone();
+        const rawBinEnd = cursor.clone().add(1, unit);
+        const binStart = moment.max(rawBinStart, this.rangeStart);
+        const binEnd = moment.min(rawBinEnd, this.rangeEnd);
+        if (binEnd.isAfter(binStart)) {
+          bins.push({
+            start: binStart.clone(),
+            end: binEnd.clone(),
+            label: this.formatBinLabel(binStart, binEnd, unit),
+          });
+        }
+        cursor = rawBinEnd;
       }
 
       return bins;
