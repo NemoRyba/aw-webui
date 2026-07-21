@@ -149,6 +149,15 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Fleet Devices': 'Geräte',
     'Fleet Users': 'Benutzer',
     'Live devices': 'Live-Geräte',
+    'Server storage': 'Server-Speicher',
+    Calculated: 'Berechnet',
+    Recalculate: 'Neu berechnen',
+    'ActivityWatch data': 'ActivityWatch-Daten',
+    'Disk size': 'Datenträgergröße',
+    'Free disk space': 'Freier Speicherplatz',
+    'Disk used': 'Datenträger belegt',
+    'Data path': 'Datenpfad',
+    'Unable to load server storage': 'Server-Speicher konnte nicht geladen werden',
     'Devices grouped across all reported sessions':
       'Geräte, gruppiert über alle gemeldeten Sitzungen',
     'Users grouped across all reported devices': 'Benutzer, gruppiert über alle gemeldeten Geräte',
@@ -438,6 +447,9 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Can be used to count time as active, despite no input (like meetings, or games with controllers). An empty string disables it.':
       'Kann verwendet werden, um Zeit trotz fehlender Eingaben als aktiv zu zählen, etwa bei Meetings oder Spielen mit Controllern. Ein leerer String deaktiviert die Funktion.',
     'Example expression:': 'Beispielausdruck:',
+    'AFK overlay color': 'AFK-Overlay-Farbe',
+    'Color used for the hatched AFK overlay in summary bars.':
+      'Farbe für das schraffierte AFK-Overlay in Übersichts-Balken.',
     Enabled: 'Aktiviert',
     Disabled: 'Deaktiviert',
     'Use fallback colors': 'Fallback-Farben verwenden',

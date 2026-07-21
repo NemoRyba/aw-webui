@@ -18,6 +18,20 @@ div
     | You can also find and share categorization rule presets on #[a(href="https://forum.activitywatch.net/c/projects/category-rules") the forum].
     | For help on how to write categorization rules, see #[a(href="https://docs.activitywatch.net/en/latest/features/categorization.html") the documentation].
 
+  div.d-sm-flex.justify-content-between.align-items-center.my-4
+    div
+      h6.mb-1 {{ $tr('AFK overlay color') }}
+      small.text-muted
+        | {{ $tr('Color used for the hatched AFK overlay in summary bars.') }}
+    div.d-flex.align-items-center.mt-2.mt-sm-0
+      b-form-input.fleet-afk-color-input(
+        type="color"
+        size="sm"
+        v-model="afkOverlayColor"
+        :aria-label="$tr('AFK overlay color')"
+      )
+      code.ml-2 {{ afkOverlayColor }}
+
   div.my-4
     b-alert(variant="warning" :show="classes_unsaved_changes")
       | You have unsaved changes!
@@ -48,6 +62,7 @@ import { translateCurrent } from '~/i18n';
 import router from '~/route';
 
 import { useCategoryStore } from '~/stores/categories';
+import { useSettingsStore } from '~/stores/settings';
 
 import _ from 'lodash';
 const confirmationMessageKey =
@@ -61,12 +76,21 @@ export default {
   },
   data: () => ({
     categoryStore: useCategoryStore(),
+    settingsStore: useSettingsStore(),
     editingId: null,
     routerGuardRemover: null,
   }),
   computed: {
     ...mapState(useCategoryStore, ['classes_unsaved_changes']),
     ...mapGetters(useCategoryStore, ['classes_hierarchy']),
+    afkOverlayColor: {
+      get() {
+        return this.settingsStore.afkOverlayColor;
+      },
+      set(value) {
+        this.settingsStore.update({ afkOverlayColor: value });
+      },
+    },
   },
   mounted() {
     this.categoryStore.load();
@@ -174,3 +198,11 @@ export default {
   },
 };
 </script>
+
+<style scoped lang="scss">
+.fleet-afk-color-input {
+  width: 3.5rem;
+  min-width: 3.5rem;
+  padding: 0.125rem;
+}
+</style>

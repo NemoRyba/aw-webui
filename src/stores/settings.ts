@@ -27,6 +27,7 @@ interface State {
   startOfWeek: string;
   durationDefault: number;
   useColorFallback: boolean;
+  afkOverlayColor: string;
   landingpage: string;
   theme: 'light' | 'dark' | 'auto';
 
@@ -60,6 +61,7 @@ export const useSettingsStore = defineStore('settings', {
     startOfWeek: 'Monday',
     durationDefault: 4 * 60 * 60,
     useColorFallback: false,
+    afkOverlayColor: '#ff4d4f',
     landingpage: '/home',
 
     theme: 'auto',

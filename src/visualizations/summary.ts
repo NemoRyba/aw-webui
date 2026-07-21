@@ -9,7 +9,7 @@ import { seconds_to_duration } from '~/util/time';
 import { IEvent } from '~/util/interfaces';
 
 const textColor = '#333';
-const AFK_HATCH_COLOR = '#ff4d4f';
+const DEFAULT_AFK_HATCH_COLOR = '#ff4d4f';
 
 function create(container: HTMLElement) {
   // Clear element
@@ -49,6 +49,10 @@ interface Entry {
   afkDuration?: number;
   colorKey?: string;
   link?: string;
+}
+
+interface SummaryOptions {
+  afkOverlayColor?: string;
 }
 
 function entryColor(app: Entry): string {
@@ -110,7 +114,7 @@ function afkTooltip(app: Entry) {
   return `\nAFK time: ${seconds_to_duration(afkDuration)} (${percent}%)`;
 }
 
-function update(container: HTMLElement, apps: Entry[]) {
+function update(container: HTMLElement, apps: Entry[], options: SummaryOptions = {}) {
   // No apps, sets status to "No data"
   if (apps.length <= 0) {
     set_status(container, 'No data');
@@ -130,6 +134,7 @@ function update(container: HTMLElement, apps: Entry[]) {
   const longest_duration = apps[0].duration;
   const clipPrefix = `summary_clip_${Math.random().toString(36).slice(2)}_`;
   const defs = svg.append('defs');
+  const afkHatchColor = options.afkOverlayColor || DEFAULT_AFK_HATCH_COLOR;
   const hatchPatternId = `${clipPrefix}afk_hatch`;
   const hatchPattern = defs
     .append('pattern')
@@ -144,7 +149,7 @@ function update(container: HTMLElement, apps: Entry[]) {
     .attr('y1', 0)
     .attr('x2', 0)
     .attr('y2', 10)
-    .style('stroke', AFK_HATCH_COLOR)
+    .style('stroke', afkHatchColor)
     .style('stroke-width', 2)
     .style('opacity', 0.9);
 
@@ -226,7 +231,7 @@ function update(container: HTMLElement, apps: Entry[]) {
         .attr('width', afkWidthPercent + '%')
         .attr('height', barHeight)
         .style('fill', `url(#${hatchPatternId})`)
-        .style('stroke', AFK_HATCH_COLOR)
+        .style('stroke', afkHatchColor)
         .style('stroke-width', 1.5)
         .style('pointer-events', 'none');
     }
@@ -264,7 +269,8 @@ function updateSummedEvents(
   titleKeyFunc: (event: IEvent) => string,
   hoverKeyFunc: (event: IEvent) => string,
   colorKeyFunc: (event: IEvent) => string,
-  linkKeyFunc: (event: IEvent) => string = () => null
+  linkKeyFunc: (event: IEvent) => string = () => null,
+  options: SummaryOptions = {}
 ) {
   if (hoverKeyFunc == null) {
     hoverKeyFunc = titleKeyFunc;
@@ -281,7 +287,7 @@ function updateSummedEvents(
       link: linkKeyFunc(e),
     } as Entry;
   });
-  update(container, apps);
+  update(container, apps, options);
 }
 
 export default {

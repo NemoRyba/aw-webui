@@ -24,6 +24,7 @@ div
 import summary from './summary';
 import 'vue-awesome/icons/angle-double-down';
 import 'vue-awesome/icons/angle-double-up';
+import { useSettingsStore } from '~/stores/settings';
 
 export default {
   name: 'aw-summary',
@@ -49,11 +50,17 @@ export default {
     },
   },
   data: function () {
-    return { limit_: this.limit };
+    return {
+      limit_: this.limit,
+      settingsStore: useSettingsStore(),
+    };
   },
   computed: {
     visible_more() {
       return this.fields && this.fields.length > 0 && this.with_limit;
+    },
+    afkOverlayColor() {
+      return this.settingsStore.afkOverlayColor;
     },
   },
   watch: {
@@ -61,6 +68,9 @@ export default {
       this.update();
     },
     limit_: function () {
+      this.update();
+    },
+    afkOverlayColor: function () {
       this.update();
     },
   },
@@ -79,7 +89,8 @@ export default {
           this.namefunc,
           this.hoverfunc,
           this.colorfunc,
-          this.linkfunc
+          this.linkfunc,
+          { afkOverlayColor: this.afkOverlayColor }
         );
       } else {
         summary.set_status(el, 'Loading...');

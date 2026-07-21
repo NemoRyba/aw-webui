@@ -65,6 +65,15 @@ export interface IFleetLiveResponse {
   devices: IFleetLiveDevice[];
 }
 
+export interface IFleetStorageStatus {
+  generated_at: string;
+  data_dir: string;
+  data_size_bytes: number;
+  disk_total_bytes: number;
+  disk_used_bytes: number;
+  disk_free_bytes: number;
+}
+
 export interface IFleetUserListItem {
   username: string;
   devices: string[];
