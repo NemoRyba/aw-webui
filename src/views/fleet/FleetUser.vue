@@ -38,6 +38,8 @@ div
   b-alert(show variant="info" v-if="!user")
     | {{ $tr('No data found for this user.') }}
 
+  fleet-activity-summary(v-if="user" :user="user")
+
   div.row(v-if="user")
     div.col-md-3.mb-3
       b-card
@@ -117,6 +119,7 @@ export default {
   name: 'FleetUser',
   components: {
     'column-order-editor': () => import('~/components/ColumnOrderEditor.vue'),
+    'fleet-activity-summary': () => import('~/views/fleet/FleetActivitySummary.vue'),
     'fleet-nav': () => import('~/components/FleetNav.vue'),
   },
   props: {

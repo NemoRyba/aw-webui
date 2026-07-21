@@ -76,6 +76,10 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
       'Für die aktuelle Auswahl sind keine Watcher verfügbar.',
     'No timeline data found for the selected filters.':
       'Für die gewählten Filter wurden keine Zeitachsen-Daten gefunden.',
+    'No activity summary data found for the selected range.':
+      'Für den gewählten Zeitraum wurden keine Aktivitätsübersichtsdaten gefunden.',
+    'Unable to load activity summary': 'Aktivitätsübersicht konnte nicht geladen werden',
+    'No data': 'Keine Daten',
     'Last updated': 'Zuletzt aktualisiert',
     'Sign in to continue': 'Zum Fortfahren anmelden',
     'Log in': 'Anmelden',
