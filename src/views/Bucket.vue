@@ -42,7 +42,14 @@ div
 
   vis-timeline(:buckets="[bucket_with_events]", :showRowLabels="false")
 
-  aw-eventlist(:bucket_id="id", @save="updateEvent", :events="events" editable=true)
+  aw-eventlist(
+    :bucket_id="id"
+    @save="updateEvent"
+    @delete="removeEvent"
+    @delete-many="removeEvents"
+    :events="events"
+    editable=true
+  )
 </template>
 
 <script lang="ts">
@@ -120,6 +127,18 @@ export default {
       } else {
         console.error(':(');
       }
+    },
+    removeEvent: async function (event) {
+      if (!event || event.id === undefined || event.id === null) {
+        return;
+      }
+      await this.removeEvents([event.id]);
+    },
+    removeEvents: async function (eventIds) {
+      const deletedIds = new Set((eventIds || []).map(eventId => String(eventId)));
+      this.events = this.events.filter(event => !deletedIds.has(String(event.id)));
+      await this.getEventCount(this.id);
+      await this.bucketsStore.loadBuckets();
     },
   },
 };

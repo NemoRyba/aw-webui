@@ -56,7 +56,17 @@ div.fleet-activity-summary.mb-3
   div.row(v-else)
     div.col-12.mb-3
       div.fleet-summary-panel.fleet-summary-panel--timeline
-        h6.mb-3 {{ $tr('Timeline (barchart)') }}
+        div.fleet-panel-header.mb-3
+          h6.mb-0 {{ $tr('Timeline (barchart)') }}
+          b-button(
+            size="sm"
+            variant="outline-secondary"
+            :title="$tr('Refresh this panel')"
+            @click="refreshPanel('timeline')"
+            :disabled="loading || isPanelRefreshing('timeline')"
+          )
+            icon(name="sync")
+            span.d-none.d-md-inline.ml-1 {{ $tr('Refresh') }}
         div.fleet-timeline-chart(v-if="timelineDatasets.length > 0")
           div.fleet-y-axis(:style="{ color: chartTextColor }")
             div.fleet-y-axis-unit {{ $tr('Hours') }}
@@ -69,6 +79,7 @@ div.fleet-activity-summary.mb-3
           div.fleet-chart-scroll
             div.fleet-chart(:style="{ minWidth: timelineChartMinWidth }")
               bar(
+                :key="'timeline-chart-' + panelRefreshKeys.timeline"
                 :chart-data="timelineChartData"
                 :chart-options="timelineChartOptions"
                 :plugins="timelineChartPlugins"
@@ -84,6 +95,15 @@ div.fleet-activity-summary.mb-3
             div.small.text-muted
               | {{ $tr('Events shown: {count}', { count: dailyTimelineEventCount }) }}
           div.fleet-daily-timeline-tools
+            b-button(
+              size="sm"
+              variant="outline-secondary"
+              :title="$tr('Refresh this panel')"
+              @click="refreshPanel('dailyTimeline')"
+              :disabled="loading || isPanelRefreshing('dailyTimeline')"
+            )
+              icon(name="sync")
+              span.d-none.d-md-inline.ml-1 {{ $tr('Refresh') }}
             div.fleet-daily-swimlane
               span.small.text-muted.mr-2 {{ $tr('Swimlanes') }}:
               b-form-select(
@@ -119,8 +139,19 @@ div.fleet-activity-summary.mb-3
 
     div.col-12.mb-3
       div.fleet-summary-panel.fleet-summary-panel--category-tree
-        h6.mb-3 {{ $tr('Category Tree') }}
+        div.fleet-panel-header.mb-3
+          h6.mb-0 {{ $tr('Category Tree') }}
+          b-button(
+            size="sm"
+            variant="outline-secondary"
+            :title="$tr('Refresh this panel')"
+            @click="refreshPanel('categoryTree')"
+            :disabled="loading || isPanelRefreshing('categoryTree')"
+          )
+            icon(name="sync")
+            span.d-none.d-md-inline.ml-1 {{ $tr('Refresh') }}
         aw-categorytree(
+          :key="'category-tree-' + panelRefreshKeys.categoryTree"
           :events="categorizedWindowEvents"
           show_colors
           horizontal
@@ -129,8 +160,18 @@ div.fleet-activity-summary.mb-3
 
     div.col-md-6.col-xl-4.mb-3
       div.fleet-summary-panel
-        h6.mb-3 {{ $tr('Top Applications') }}
+        div.fleet-panel-header.mb-3
+          h6.mb-0 {{ $tr('Top Applications') }}
+          b-button(
+            size="sm"
+            variant="outline-secondary"
+            :title="$tr('Refresh this panel')"
+            @click="refreshPanel('topApps')"
+            :disabled="loading || isPanelRefreshing('topApps')"
+          )
+            icon(name="sync")
         aw-summary(
+          :key="'top-apps-' + panelRefreshKeys.topApps"
           :fields="topAppEvents"
           :namefunc="event => event.data.app"
           :colorfunc="event => event.data.app"
@@ -139,8 +180,18 @@ div.fleet-activity-summary.mb-3
 
     div.col-md-6.col-xl-4.mb-3
       div.fleet-summary-panel
-        h6.mb-3 {{ $tr('Top Window Titles') }}
+        div.fleet-panel-header.mb-3
+          h6.mb-0 {{ $tr('Top Window Titles') }}
+          b-button(
+            size="sm"
+            variant="outline-secondary"
+            :title="$tr('Refresh this panel')"
+            @click="refreshPanel('topTitles')"
+            :disabled="loading || isPanelRefreshing('topTitles')"
+          )
+            icon(name="sync")
         aw-summary(
+          :key="'top-titles-' + panelRefreshKeys.topTitles"
           :fields="topTitleEvents"
           :namefunc="event => event.data.title"
           :hoverfunc="event => event.data.app"
@@ -150,8 +201,18 @@ div.fleet-activity-summary.mb-3
 
     div.col-md-6.col-xl-4.mb-3
       div.fleet-summary-panel
-        h6.mb-3 {{ $tr('Top Categories') }}
+        div.fleet-panel-header.mb-3
+          h6.mb-0 {{ $tr('Top Categories') }}
+          b-button(
+            size="sm"
+            variant="outline-secondary"
+            :title="$tr('Refresh this panel')"
+            @click="refreshPanel('topCategories')"
+            :disabled="loading || isPanelRefreshing('topCategories')"
+          )
+            icon(name="sync")
         aw-summary(
+          :key="'top-categories-' + panelRefreshKeys.topCategories"
           :fields="topCategoryEvents"
           :namefunc="categoryName"
           :colorfunc="categoryName"
@@ -160,9 +221,19 @@ div.fleet-activity-summary.mb-3
 
     div.col-md-12.col-xl-4.mb-3
       div.fleet-summary-panel.fleet-summary-panel--sunburst
-        h6.mb-3 {{ $tr('Category Sunburst') }}
+        div.fleet-panel-header.mb-3
+          h6.mb-0 {{ $tr('Category Sunburst') }}
+          b-button(
+            size="sm"
+            variant="outline-secondary"
+            :title="$tr('Refresh this panel')"
+            @click="refreshPanel('sunburst')"
+            :disabled="loading || isPanelRefreshing('sunburst')"
+          )
+            icon(name="sync")
         aw-sunburst-categories(
           v-if="topCategoriesHierarchy"
+          :key="'sunburst-' + panelRefreshKeys.sunburst"
           :data="topCategoriesHierarchy"
           style="height: 20em"
         )
@@ -182,6 +253,7 @@ import { useBucketsStore } from '~/stores/buckets';
 import { useCategoryStore } from '~/stores/categories';
 import { useSettingsStore } from '~/stores/settings';
 import { build_category_hierarchy, classifyEvents } from '~/util/classes';
+import { getColorFromString } from '~/util/color';
 import { getBucketIdentity } from '~/util/bucketIdentity';
 import { seconds_to_duration } from '~/util/time';
 import { detectPreferredTheme } from '~/util/theme';
@@ -309,6 +381,24 @@ export default {
       dailyTimelineSwimlane: null,
       timelineChartArea: null,
       loadRequestId: 0,
+      panelRefreshKeys: {
+        timeline: 0,
+        dailyTimeline: 0,
+        categoryTree: 0,
+        topApps: 0,
+        topTitles: 0,
+        topCategories: 0,
+        sunburst: 0,
+      },
+      panelRefreshing: {
+        timeline: false,
+        dailyTimeline: false,
+        categoryTree: false,
+        topApps: false,
+        topTitles: false,
+        topCategories: false,
+        sunburst: false,
+      },
     };
   },
   computed: {
@@ -486,15 +576,23 @@ export default {
         .slice(0, 8)
         .map(event => categoryKey(event.data.$category));
       const topCategorySet = new Set(topCategoryKeys);
+      const timelineDeviceLabels = new Set(
+        this.categorizedWindowEvents.map(event => this.eventDeviceLabel(event))
+      );
+      const splitByDevice = timelineDeviceLabels.size > 1;
       const datasetByCategory = {};
       const afkData = Array.from({ length: this.timelineBins.length }, () => 0);
 
       const createDetail = () => ({
         duration: 0,
+        rawDuration: 0,
         afkDuration: 0,
+        rawAfkDuration: 0,
         apps: new Map(),
         titles: new Map(),
         categories: new Map(),
+        devices: new Map(),
+        deviceEntries: new Map(),
       });
       const ensureDetail = (dataset, index) => {
         if (!dataset.details[index]) {
@@ -517,11 +615,12 @@ export default {
         });
       };
 
-      const ensureDataset = (key, category) => {
+      const ensureDataset = (key, category, deviceLabel = '') => {
         if (!datasetByCategory[key]) {
           datasetByCategory[key] = {
             key,
             category,
+            deviceLabel,
             data: Array.from({ length: this.timelineBins.length }, () => 0),
             details: Array.from({ length: this.timelineBins.length }, () => null),
           };
@@ -533,11 +632,19 @@ export default {
         const eventStart = moment(event.timestamp);
         const eventEnd = eventStart.clone().add(event.duration, 'seconds');
         const eventCategory = event.data.$category || ['Uncategorized'];
+        const eventDevice = this.eventDeviceLabel(event);
+        const eventDeviceKey = this.eventDeviceKey(event);
+        const eventApp = event.data.app || event.data.process_name || UNKNOWN;
+        const eventTitle = event.data.title || '(no title)';
         const key = categoryKey(eventCategory);
-        const datasetKey = topCategorySet.has(key) ? key : 'Other';
+        const baseDatasetKey = topCategorySet.has(key) ? key : 'Other';
+        const datasetKey = splitByDevice
+          ? `${baseDatasetKey}::device::${eventDeviceKey}`
+          : baseDatasetKey;
         const dataset = ensureDataset(
           datasetKey,
-          datasetKey === 'Other' ? ['Other'] : eventCategory
+          baseDatasetKey === 'Other' ? ['Other'] : eventCategory,
+          splitByDevice ? eventDevice : ''
         );
 
         this.timelineBins.forEach((bin, index) => {
@@ -551,16 +658,20 @@ export default {
 
             const detail = ensureDetail(dataset, index);
             detail.duration += seconds;
+            detail.rawDuration += seconds;
             if (event.data?.$afk) {
               detail.afkDuration += seconds;
+              detail.rawAfkDuration += seconds;
             }
+            addDetailValue(detail.apps, eventApp, seconds);
+            addDetailValue(detail.titles, eventTitle, seconds);
+            addDetailValue(detail.categories, eventCategory.join(' > '), seconds);
+            addDetailValue(detail.devices, eventDevice, seconds);
             addDetailValue(
-              detail.apps,
-              event.data.app || event.data.process_name || UNKNOWN,
+              detail.deviceEntries,
+              this.timelineDeviceEntryLabel(eventDevice, eventApp, eventTitle),
               seconds
             );
-            addDetailValue(detail.titles, event.data.title || '(no title)', seconds);
-            addDetailValue(detail.categories, eventCategory.join(' > '), seconds);
           }
         });
       }
@@ -585,15 +696,26 @@ export default {
 
       return {
         datasets: datasets.map((dataset: any) => {
-          const isOther = dataset.key === 'Other';
           const category = dataset.category;
+          const isOther = category.length === 1 && category[0] === 'Other';
+          const categoryLabel = category.join(' > ');
+          const deviceLabel = dataset.deviceLabel || '';
+          const label = deviceLabel ? `${categoryLabel} · ${deviceLabel}` : categoryLabel;
+          const categoryColor = isOther
+            ? '#adb5bd'
+            : this.categoryStore.get_category_color(category);
           return {
-            label: category.join(' > '),
-            backgroundColor: isOther ? '#adb5bd' : this.categoryStore.get_category_color(category),
+            label,
+            backgroundColor: categoryColor,
+            borderColor: deviceLabel ? getColorFromString(deviceLabel) : categoryColor,
+            borderWidth: deviceLabel ? 1.5 : 0,
+            borderSkipped: false,
             data: dataset.data.map(value => Math.round(value * 1000) / 1000),
             $timelineDetails: dataset.details.map(detail =>
               this.serializeTimelineDetail(detail, isOther)
             ),
+            $timelineCategoryLabel: categoryLabel,
+            $timelineDeviceLabel: deviceLabel,
           };
         }),
         afkData: afkData.map(value => Math.round(value * 1000) / 1000),
@@ -687,6 +809,7 @@ export default {
         this.selectedDeviceIds.join('|'),
         this.dailyTimelineSwimlane || 'none',
         this.selectedDailyWatcherKeys.join('|'),
+        this.panelRefreshKeys.dailyTimeline,
       ].join('::');
     },
     dailyTimelineEventCount() {
@@ -695,6 +818,10 @@ export default {
       });
     },
     timelineChartMinWidth() {
+      if (this.isSingleDayRange) {
+        return '100%';
+      }
+
       const binCount = Math.max(1, this.timelineBins.length);
       const pxPerBin =
         binCount > 180 ? 26 : binCount > 90 ? 34 : binCount > 45 ? 42 : binCount > 20 ? 52 : 72;
@@ -784,20 +911,30 @@ export default {
       const afkData = this.timelineAfkData;
       const afkLabel = this.$tr('AFK time');
       const totalTimeLabel = this.$tr('Total time');
+      const collectedDeviceTimeLabel = this.$tr('Collected device time');
       const formatTooltipDetail = this.formatTimelineTooltipDetail.bind(this);
+      const formatAxisTooltipDetail = this.formatTimelineAxisTooltipDetail.bind(this);
       const plugins: any = {
         tooltip: {
           mode: 'point',
           intersect: false,
           callbacks: {
             label(context) {
-              return `${context.dataset.label}: ${formatDuration(context.parsed.y)}`;
+              const dataset: any = context.dataset;
+              const visibleSeconds = Number(context.parsed.y || 0) * 3600;
+              const detail = dataset?.$timelineDetails?.[context.dataIndex];
+              const rawSeconds = Number(detail?.rawDuration || visibleSeconds);
+              const label = `${dataset.label}: ${seconds_to_duration(visibleSeconds)}`;
+              if (rawSeconds > visibleSeconds + 1) {
+                return `${label} (${collectedDeviceTimeLabel}: ${seconds_to_duration(rawSeconds)})`;
+              }
+              return label;
             },
             afterLabel(context) {
               const dataset: any = context.dataset;
               return formatTooltipDetail(
                 dataset?.$timelineDetails?.[context.dataIndex],
-                dataset?.label
+                dataset?.$timelineCategoryLabel || dataset?.label
               );
             },
             footer(items) {
@@ -816,6 +953,7 @@ export default {
               if (afkHours > 0) {
                 lines.push(`${afkLabel}: ${formatDuration(afkHours)}`);
               }
+              lines.push(...formatAxisTooltipDetail(chart.data.datasets || [], index, totalHours));
               return lines;
             },
           },
@@ -977,15 +1115,18 @@ export default {
     },
   },
   methods: {
-    async loadRawEvents() {
+    async loadRawEvents(options: any = {}) {
       if (!this.user || !this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
-        return;
+        return false;
       }
 
+      const showGlobalLoading = options.showGlobalLoading !== false;
       const requestKey = this.reloadKey;
       const requestId = this.loadRequestId + 1;
       this.loadRequestId = requestId;
-      this.loading = true;
+      if (showGlobalLoading) {
+        this.loading = true;
+      }
       this.loadError = '';
 
       try {
@@ -996,23 +1137,69 @@ export default {
         const buckets = await this.loadSummaryBuckets();
 
         if (requestId !== this.loadRequestId || requestKey !== this.reloadKey) {
-          return;
+          return false;
         }
 
         this.rawTimelineBuckets = buckets;
         this.activeWindowEvents = this.buildActiveWindowEvents(buckets);
         this.syncDailyTimelineWatchers();
+        return true;
       } catch (error) {
         console.error('Unable to load fleet activity summary:', error);
         this.loadError = this.$tr('Unable to load activity summary');
         this.activeWindowEvents = [];
         this.rawTimelineBuckets = [];
         this.selectedDailyWatcherKeys = [];
+        return false;
       } finally {
-        if (requestId === this.loadRequestId) {
+        if (showGlobalLoading && requestId === this.loadRequestId) {
           this.loading = false;
         }
       }
+    },
+    async refreshDailyTimelineData() {
+      if (!this.user || !this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
+        return false;
+      }
+
+      const requestKey = this.reloadKey;
+      try {
+        const buckets = await this.loadSummaryBuckets();
+        if (requestKey !== this.reloadKey) {
+          return false;
+        }
+        this.rawTimelineBuckets = buckets;
+        this.syncDailyTimelineWatchers();
+        return true;
+      } catch (error) {
+        console.error('Unable to refresh daily watcher timeline:', error);
+        this.loadError = this.$tr('Unable to load activity summary');
+        return false;
+      }
+    },
+    async refreshPanel(panelKey) {
+      if (this.loading || this.isPanelRefreshing(panelKey)) {
+        return;
+      }
+
+      this.$set(this.panelRefreshing, panelKey, true);
+      try {
+        const refreshed =
+          panelKey === 'dailyTimeline'
+            ? await this.refreshDailyTimelineData()
+            : await this.loadRawEvents({ showGlobalLoading: false });
+        if (refreshed) {
+          this.bumpPanelRefreshKey(panelKey);
+        }
+      } finally {
+        this.$set(this.panelRefreshing, panelKey, false);
+      }
+    },
+    isPanelRefreshing(panelKey) {
+      return Boolean(this.panelRefreshing[panelKey]);
+    },
+    bumpPanelRefreshKey(panelKey) {
+      this.$set(this.panelRefreshKeys, panelKey, Number(this.panelRefreshKeys[panelKey] || 0) + 1);
     },
     async loadSummaryBuckets() {
       await this.bucketsStore.ensureLoaded();
@@ -1563,6 +1750,21 @@ export default {
         sessionId: pick('session_id', bucketIdentity.sessionId),
       };
     },
+    eventDeviceLabel(event) {
+      const data = event?.data || {};
+      return String(data.device_name || data.hostname || data.device_id || UNKNOWN);
+    },
+    eventDeviceKey(event) {
+      const data = event?.data || {};
+      return String(data.device_id || data.hostname || data.device_name || UNKNOWN);
+    },
+    timelineDeviceEntryLabel(deviceLabel, appLabel, titleLabel) {
+      const title = String(titleLabel || '').trim();
+      if (!title || title === '(no title)' || title === appLabel) {
+        return `${deviceLabel} · ${appLabel}`;
+      }
+      return `${deviceLabel} · ${appLabel} · ${title}`;
+    },
     matchesIdentity(identity) {
       if (identity.username !== this.user.username) {
         return false;
@@ -1714,10 +1916,14 @@ export default {
 
       return {
         duration: Math.round(Number(detail.duration || 0)),
+        rawDuration: Math.round(Number(detail.rawDuration || detail.duration || 0)),
         afkDuration: Math.round(Number(detail.afkDuration || 0)),
+        rawAfkDuration: Math.round(Number(detail.rawAfkDuration || detail.afkDuration || 0)),
         apps: toSortedList(detail.apps),
         titles: toSortedList(detail.titles),
         categories: includeCategories ? toSortedList(detail.categories) : [],
+        devices: toSortedList(detail.devices),
+        deviceEntries: toSortedList(detail.deviceEntries),
       };
     },
     formatTimelineTooltipDetail(detail, datasetLabel = '') {
@@ -1726,13 +1932,103 @@ export default {
       }
 
       const lines = [];
+      if (Number(detail.rawDuration || 0) > Number(detail.duration || 0) + 1) {
+        lines.push(
+          `${this.$tr('Collected device time')}: ${seconds_to_duration(detail.rawDuration)}`
+        );
+      }
       if (datasetLabel === 'Other') {
         this.addTimelineTooltipSection(lines, this.$tr('Top Categories'), detail.categories, 4);
       }
+      this.addTimelineTooltipSection(lines, this.$tr('Device breakdown'), detail.devices, 4);
+      this.addTimelineTooltipSection(
+        lines,
+        this.$tr('Device entries'),
+        detail.deviceEntries,
+        4,
+        86
+      );
       this.addTimelineTooltipSection(lines, this.$tr('Top Applications'), detail.apps, 4);
       this.addTimelineTooltipSection(lines, this.$tr('Top Window Titles'), detail.titles, 4, 72);
 
       return lines;
+    },
+    formatTimelineAxisTooltipDetail(datasets, index, visibleHours) {
+      const detail = this.mergeTimelineDetails(datasets, index);
+      if (!detail || detail.rawDuration <= 0) {
+        return [];
+      }
+
+      const lines = [];
+      const visibleSeconds = Number(visibleHours || 0) * 3600;
+      if (detail.rawDuration > visibleSeconds + 1) {
+        lines.push(
+          `${this.$tr('Collected device time')}: ${seconds_to_duration(detail.rawDuration)}`
+        );
+      }
+      this.addTimelineTooltipSection(lines, this.$tr('Device breakdown'), detail.devices, 6);
+      this.addTimelineTooltipSection(lines, this.$tr('Top Categories'), detail.categories, 8);
+      this.addTimelineTooltipSection(
+        lines,
+        this.$tr('Device entries'),
+        detail.deviceEntries,
+        6,
+        86
+      );
+
+      return lines;
+    },
+    mergeTimelineDetails(datasets, index) {
+      const addValue = (values, label, duration) => {
+        const seconds = Number(duration || 0);
+        if (!label || seconds <= 0) {
+          return;
+        }
+        values.set(label, Number(values.get(label) || 0) + seconds);
+      };
+      const addEntries = (values, entries = []) => {
+        entries.forEach(entry => addValue(values, entry.label, entry.duration));
+      };
+      const toSortedList = values =>
+        _.orderBy(
+          Array.from(values.entries()).map(([label, duration]) => ({
+            label,
+            duration: Math.round(Number(duration || 0)),
+          })),
+          ['duration'],
+          ['desc']
+        ).filter(item => item.duration > 0);
+
+      const merged = {
+        rawDuration: 0,
+        devices: new Map(),
+        categories: new Map(),
+        deviceEntries: new Map(),
+      };
+
+      (datasets || []).forEach((dataset: any) => {
+        const detail = dataset?.$timelineDetails?.[index];
+        if (!detail || Number(detail.rawDuration || detail.duration || 0) <= 0) {
+          return;
+        }
+
+        const rawDuration = Number(detail.rawDuration || detail.duration || 0);
+        merged.rawDuration += rawDuration;
+        addValue(
+          merged.categories,
+          dataset.$timelineCategoryLabel || dataset.label || UNKNOWN,
+          rawDuration
+        );
+        addEntries(merged.devices, detail.devices);
+        addEntries(merged.deviceEntries, detail.deviceEntries);
+      });
+
+      return {
+        rawDuration: Math.round(merged.rawDuration),
+        devices: toSortedList(merged.devices),
+        categories: toSortedList(merged.categories),
+        deviceEntries: toSortedList(merged.deviceEntries),
+      };
     },
     addTimelineTooltipSection(lines, title, entries, limit = 4, maxLabelLength = 48) {
       const visibleEntries = (entries || []).slice(0, limit);
@@ -1962,6 +2258,17 @@ export default {
 
 .fleet-summary-panel--daily-watchers {
   min-height: 24rem;
+}
+
+.fleet-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+
+  h6 {
+    min-width: 0;
+  }
 }
 
 .fleet-summary-filters {
