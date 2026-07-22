@@ -4,6 +4,10 @@ div
 
   hr
 
+  AdminAuthSettings(v-if="showAdminAuthSettings")
+
+  hr(v-if="showAdminAuthSettings")
+
   DaystartSettings
 
   hr
@@ -41,7 +45,9 @@ div
 
 <script lang="ts">
 import { useSettingsStore } from '~/stores/settings';
+import { useAuthStore } from '~/stores/auth';
 
+import AdminAuthSettings from '~/views/settings/AdminAuthSettings.vue';
 import DaystartSettings from '~/views/settings/DaystartSettings.vue';
 import TimelineDurationSettings from '~/views/settings/TimelineDurationSettings.vue';
 import ReleaseNotificationSettings from '~/views/settings/ReleaseNotificationSettings.vue';
@@ -56,6 +62,7 @@ export default {
   name: 'Settings',
   components: {
     DaystartSettings,
+    AdminAuthSettings,
     TimelineDurationSettings,
     ReleaseNotificationSettings,
     CategorizationSettings,
@@ -64,6 +71,11 @@ export default {
     ColorSettings,
     DeveloperSettings,
     ActivePatternSettings,
+  },
+  computed: {
+    showAdminAuthSettings() {
+      return useAuthStore().username === 'admin';
+    },
   },
   async created() {
     await this.init();

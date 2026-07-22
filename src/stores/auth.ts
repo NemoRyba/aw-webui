@@ -7,6 +7,7 @@ import { getClient } from '~/util/awclient';
 interface IAuthUser {
   username: string;
   is_admin: boolean;
+  source?: string;
 }
 
 interface State {
@@ -23,6 +24,7 @@ function normalizeAuthPayload(payload: any) {
       ? {
           username: String(payload.user.username),
           is_admin: Boolean(payload.user.is_admin),
+          source: String(payload.user.source || 'local'),
         }
       : null,
     loaded: true,
