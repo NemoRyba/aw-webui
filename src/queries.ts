@@ -22,6 +22,8 @@ function safeHostname(hostname: string): string {
 interface Rule {
   type: string;
   regex?: string;
+  ignore_case?: boolean;
+  select_keys?: string[];
 }
 
 type Category = [string[], Rule];

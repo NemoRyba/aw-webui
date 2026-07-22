@@ -10,6 +10,7 @@ export interface Rule {
   type: 'regex' | 'none';
   regex?: string;
   ignore_case?: boolean;
+  select_keys?: string[];
 }
 
 export interface Category {
@@ -242,7 +243,8 @@ export function classifyEvents(events: IEvent[], categories: Category[]): IEvent
   // If several categories match the event, the deepest category will be chosen.
   return events.map((e: IEvent) => {
     const matchingCats: [Category, RegExp][] = regexes.filter(c => {
-      return _.map(CLASSIFY_KEYS, key => c[1].test(e.data[key])).some(x => x);
+      const keys = c[0].rule.select_keys?.length ? c[0].rule.select_keys : CLASSIFY_KEYS;
+      return _.map(keys, key => c[1].test(e.data[key])).some(x => x);
     });
     if (matchingCats.length > 0) {
       const category = pickDeepest(matchingCats.map(c => c[0]));

@@ -37,3 +37,33 @@ test('matches events to category', () => {
   expect(events[1].data.$category).toEqual(testClasses[0].name);
   expect(events[2].data.$category).toEqual(['Uncategorized']);
 });
+
+test('respects category rule select_keys when matching events', () => {
+  const scopedClasses: Category[] = [
+    {
+      name: ['Work', 'CAD'],
+      rule: {
+        type: 'regex',
+        regex: 'Inventor',
+        select_keys: ['process_path'],
+      },
+    },
+  ];
+  let events: IEvent[] = [
+    {
+      timestamp: new Date().toISOString(),
+      duration: 0,
+      data: { title: 'Inventor notes', process_path: 'C:\\Tools\\notepad.exe' },
+    },
+    {
+      timestamp: new Date().toISOString(),
+      duration: 0,
+      data: { title: 'Part.ipt', process_path: 'C:\\Program Files\\Inventor\\Inventor.exe' },
+    },
+  ];
+
+  events = classes.classifyEvents(events, scopedClasses);
+
+  expect(events[0].data.$category).toEqual(['Uncategorized']);
+  expect(events[1].data.$category).toEqual(scopedClasses[0].name);
+});

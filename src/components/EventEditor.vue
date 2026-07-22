@@ -1,5 +1,5 @@
 <template lang="pug">
-b-modal(v-if="event && event.id", :id="'edit-modal-' + event.id", ref="eventEditModal", title="Edit event", centered, hide-footer)
+b-modal(v-if="event && event.id", :id="'edit-modal-' + event.id", ref="eventEditModal", title="Edit event", centered, size="lg", hide-footer)
   div(v-if="!editedEvent")
     | Loading event...
 
@@ -23,7 +23,7 @@ b-modal(v-if="event && event.id", :id="'edit-modal-' + event.id", ref="eventEdit
 
     hr
 
-    table(style="width: 100%")
+    table.event-data-table
       tr
         th Key
         th Value
@@ -34,6 +34,79 @@ b-modal(v-if="event && event.id", :id="'edit-modal-' + event.id", ref="eventEdit
           b-checkbox(v-if="typeof event.data[k] === typeof true", v-model="editedEvent.data[k]", style="margin: 0.25em")
           b-input(v-if="typeof event.data[k] === typeof 'string'", v-model="editedEvent.data[k]", size="sm")
           b-input(v-if="typeof event.data[k] === 'number'", v-model.number="editedEvent.data[k]", size="sm", type="number")
+
+    div.category-rule-panel.mt-3(v-if="categorizationAvailable")
+      div.d-flex.align-items-center.mb-2
+        h6.mb-0 {{ $tr('Categorize matching events') }}
+        b-badge.ml-2(variant="secondary" v-if="currentCategoryLabel") {{ currentCategoryLabel }}
+
+      b-alert(:show="!!categoryRuleMessage", variant="success")
+        | {{ categoryRuleMessage }}
+      b-alert(:show="!!categoryRuleDisplayError", variant="danger")
+        | {{ categoryRuleDisplayError }}
+      b-alert(:show="!!categoryRuleWarning", variant="warning")
+        | {{ categoryRuleWarning }}
+
+      div.row
+        div.col-md-6
+          b-form-group(:label="$tr('Match from')")
+            b-form-select(
+              v-model="categoryRuleField"
+              :options="categoryFieldOptions"
+              size="sm"
+            )
+        div.col-md-6
+          b-form-group(:label="$tr('Target')")
+            b-form-radio-group(
+              v-model="categoryRuleMode"
+              :options="categoryRuleModeOptions"
+              size="sm"
+              buttons
+              button-variant="outline-secondary"
+            )
+
+      div.mb-2(v-if="selectedCategoryFieldValue")
+        small.text-muted {{ $tr('Field value') }}
+        code.category-rule-value {{ selectedCategoryFieldValue }}
+
+      b-form-group(:label="$tr('Generated regex')")
+        b-form-input(
+          v-model.trim="categoryRulePattern"
+          :state="categoryRulePatternState"
+          size="sm"
+        )
+        b-form-invalid-feedback
+          | {{ $tr('Invalid pattern') }}
+        b-form-text.text-warning(v-if="categoryRuleBroadPattern")
+          | {{ $tr('Pattern too broad') }}
+
+      div.row
+        div.col-md-7(v-if="categoryRuleMode === 'append'")
+          b-form-group(:label="$tr('Existing category')")
+            b-form-select(
+              v-model="categoryRuleCategory"
+              :options="appendCategoryOptions"
+              size="sm"
+            )
+        div.col-md-7(v-else)
+          b-form-group(:label="$tr('New category path')")
+            b-form-input(
+              v-model.trim="categoryRuleNewPath"
+              :placeholder="$tr('Work > Project')"
+              size="sm"
+            )
+        div.col-md-5.d-flex.align-items-end
+          b-form-checkbox.mb-3(v-model="categoryRuleIgnoreCase")
+            | {{ $tr('Case insensitive') }}
+
+      div.d-flex.justify-content-end
+        b-button(
+          size="sm"
+          variant="primary"
+          :disabled="!categoryRuleCanSave || categoryRuleSaving"
+          @click="saveCategoryRule"
+        )
+          | {{ categoryRuleSaving ? $tr('Saving...') : $tr('Save category rule') }}
 
     hr
 
@@ -50,7 +123,30 @@ b-modal(v-if="event && event.id", :id="'edit-modal-' + event.id", ref="eventEdit
         | Save
 </template>
 
-<style lang="scss"></style>
+<style lang="scss" scoped>
+.event-data-table {
+  width: 100%;
+}
+
+.event-data-table th {
+  width: 9rem;
+}
+
+.category-rule-panel {
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 0.35rem;
+  padding: 0.75rem;
+}
+
+.category-rule-value {
+  display: block;
+  max-height: 5rem;
+  overflow: auto;
+  padding: 0.35rem 0.5rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+</style>
 
 <script lang="ts">
 // This EventEditor can be used to edit events in a specific bucket.
@@ -61,11 +157,29 @@ b-modal(v-if="event && event.id", :id="'edit-modal-' + event.id", ref="eventEdit
 //  - Timeline (on event-click)
 //  - Search (soon)
 
+import _ from 'lodash';
 import moment from 'moment';
 
 import 'vue-awesome/icons/times';
 import 'vue-awesome/icons/save';
 import 'vue-awesome/icons/trash';
+
+import { useCategoryStore } from '~/stores/categories';
+import { validateRegex, isRegexBroad } from '~/util/validate';
+
+const PREFERRED_CATEGORY_FIELDS = [
+  'app',
+  'title',
+  'process_name',
+  'process_path',
+  'path',
+  'url',
+  'browser_url',
+  'domain',
+  'classname',
+  'state',
+  'status',
+];
 
 export default {
   name: 'EventEditor',
@@ -75,7 +189,17 @@ export default {
   },
   data() {
     return {
+      categoryStore: useCategoryStore(),
       editedEvent: null,
+      categoryRuleMode: 'append',
+      categoryRuleField: '',
+      categoryRulePattern: '',
+      categoryRuleCategory: null,
+      categoryRuleNewPath: '',
+      categoryRuleIgnoreCase: true,
+      categoryRuleSaving: false,
+      categoryRuleMessage: '',
+      categoryRuleError: '',
     };
   },
   computed: {
@@ -98,13 +222,149 @@ export default {
         this.editedEvent.duration = moment(dt).diff(this.editedEvent.timestamp, 'seconds');
       },
     },
+    categoryFieldOptions() {
+      const data = this.editedEvent?.data || {};
+      const keys = Object.keys(data).filter(key => {
+        if (key.startsWith('$')) {
+          return false;
+        }
+        const value = data[key];
+        return typeof value === 'string' && value.trim().length > 0;
+      });
+
+      const orderedKeys = _.uniq(
+        PREFERRED_CATEGORY_FIELDS.filter(key => keys.includes(key)).concat(keys.sort())
+      );
+
+      return orderedKeys.map(key => ({
+        value: key,
+        text: `${key}: ${this.truncateValue(data[key])}`,
+      }));
+    },
+    categorizationAvailable() {
+      return this.categoryFieldOptions.length > 0;
+    },
+    categoryRuleModeOptions() {
+      return [
+        { value: 'append', text: this.$tr('Existing category') },
+        { value: 'create', text: this.$tr('New category') },
+      ];
+    },
+    appendCategoryOptions() {
+      return [
+        { value: null, text: this.$tr('Choose category'), disabled: true },
+        ...this.categoryStore.category_select(false).filter(option => {
+          return option.value && !_.isEqual(option.value, ['Uncategorized']);
+        }),
+      ];
+    },
+    selectedCategoryFieldValue() {
+      if (!this.categoryRuleField) {
+        return '';
+      }
+      return String(this.editedEvent?.data?.[this.categoryRuleField] || '');
+    },
+    categoryRulePatternState() {
+      if (!this.categoryRulePattern) {
+        return null;
+      }
+      return validateRegex(this.categoryRulePattern);
+    },
+    categoryRuleBroadPattern() {
+      return this.categoryRulePatternState && isRegexBroad(this.categoryRulePattern);
+    },
+    newCategoryParts() {
+      return String(this.categoryRuleNewPath || '')
+        .split('>')
+        .map(part => part.trim())
+        .filter(part => part.length > 0);
+    },
+    newCategoryExists() {
+      if (this.categoryRuleMode !== 'create' || this.newCategoryParts.length === 0) {
+        return false;
+      }
+      return this.categoryStore.classes.some(category =>
+        _.isEqual(category.name, this.newCategoryParts)
+      );
+    },
+    selectedCategory() {
+      if (!this.categoryRuleCategory) {
+        return null;
+      }
+      return this.categoryStore.classes.find(category =>
+        _.isEqual(category.name, this.categoryRuleCategory)
+      );
+    },
+    appendCompatibilityError() {
+      const category = this.selectedCategory;
+      if (!category || category.rule?.type !== 'regex') {
+        return '';
+      }
+      const selectKeys = category.rule.select_keys || [];
+      if (selectKeys.length > 0 && !selectKeys.includes(this.categoryRuleField)) {
+        return this.$tr(
+          'Selected category only matches other fields. Choose a compatible field or create a new category.'
+        );
+      }
+      return '';
+    },
+    categoryRuleDisplayError() {
+      return this.categoryRuleError || this.appendCompatibilityError;
+    },
+    categoryRuleWarning() {
+      const category = this.selectedCategory;
+      if (this.appendCompatibilityError) {
+        return '';
+      }
+      if (
+        this.categoryRuleMode === 'append' &&
+        category?.rule?.type === 'regex' &&
+        !(category.rule.select_keys || []).length
+      ) {
+        return this.$tr(
+          'Existing category has no field scope; the new pattern can match any categorized field.'
+        );
+      }
+      if (this.newCategoryExists) {
+        return this.$tr('Category already exists');
+      }
+      return '';
+    },
+    categoryRuleCanSave() {
+      if (!this.categorizationAvailable || !validateRegex(this.categoryRulePattern || '')) {
+        return false;
+      }
+      if (this.appendCompatibilityError || this.newCategoryExists) {
+        return false;
+      }
+      if (this.categoryRuleMode === 'append') {
+        return !!this.selectedCategory;
+      }
+      return this.newCategoryParts.length > 0;
+    },
+    currentCategoryLabel() {
+      const category = this.editedEvent?.data?.$category;
+      return Array.isArray(category) ? category.join(' > ') : '';
+    },
   },
   watch: {
     async event() {
       await this.getEvent();
     },
+    categoryRuleField() {
+      this.categoryRulePattern = this.generatedRulePattern();
+      this.categoryRuleMessage = '';
+      this.categoryRuleError = '';
+    },
+    categoryRuleMode() {
+      this.categoryRuleMessage = '';
+      this.categoryRuleError = '';
+    },
   },
   mounted: async function () {
+    if (this.categoryStore.classes.length === 0) {
+      this.categoryStore.load();
+    }
     await this.getEvent();
   },
   methods: {
@@ -123,8 +383,86 @@ export default {
     async getEvent() {
       if (this.bucket_id && this.event && this.event.id) {
         this.editedEvent = await this.$aw.getEvent(this.bucket_id, this.event.id);
+        this.resetCategoryRuleDefaults();
       } else {
         this.editedEvent = null;
+      }
+    },
+    resetCategoryRuleDefaults() {
+      this.categoryRuleMessage = '';
+      this.categoryRuleError = '';
+      this.categoryRuleMode = 'append';
+      this.categoryRuleField = this.categoryFieldOptions[0]?.value || '';
+      this.categoryRulePattern = this.generatedRulePattern();
+      this.categoryRuleIgnoreCase = true;
+      this.categoryRuleNewPath = '';
+
+      const eventCategory = this.editedEvent?.data?.$category;
+      const knownEventCategory =
+        Array.isArray(eventCategory) &&
+        !_.isEqual(eventCategory, ['Uncategorized']) &&
+        this.categoryStore.classes.some(category => _.isEqual(category.name, eventCategory));
+      this.categoryRuleCategory = knownEventCategory ? eventCategory : null;
+    },
+    generatedRulePattern() {
+      const value = this.selectedCategoryFieldValue;
+      return value ? _.escapeRegExp(value) : '';
+    },
+    truncateValue(value) {
+      const text = String(value || '');
+      return text.length > 72 ? `${text.slice(0, 69)}...` : text;
+    },
+    buildRule() {
+      const rule: any = {
+        type: 'regex',
+        regex: this.categoryRulePattern,
+        ignore_case: this.categoryRuleIgnoreCase,
+      };
+      if (this.categoryRuleField) {
+        rule.select_keys = [this.categoryRuleField];
+      }
+      return rule;
+    },
+    async saveCategoryRule() {
+      if (!this.categoryRuleCanSave) {
+        return;
+      }
+
+      this.categoryRuleSaving = true;
+      this.categoryRuleMessage = '';
+      this.categoryRuleError = '';
+
+      try {
+        if (this.categoryRuleMode === 'create') {
+          this.categoryStore.addClass({
+            name: this.newCategoryParts,
+            rule: this.buildRule(),
+          });
+        } else {
+          const category = this.selectedCategory;
+          if (!category) {
+            throw new Error(this.$tr('Choose category'));
+          }
+          const rule = category.rule || { type: 'none' };
+          if (rule.type === 'none' || rule.type === null) {
+            category.rule = this.buildRule();
+          } else if (rule.type === 'regex') {
+            category.rule.regex = `${rule.regex || ''}|${this.categoryRulePattern}`;
+            if (rule.ignore_case === undefined) {
+              category.rule.ignore_case = this.categoryRuleIgnoreCase;
+            }
+          }
+          this.categoryStore.classes_unsaved_changes = true;
+        }
+
+        await this.categoryStore.save();
+        this.categoryStore.load();
+        this.resetCategoryRuleDefaults();
+        this.categoryRuleMessage = this.$tr('Category rule saved');
+      } catch (e) {
+        this.categoryRuleError = e?.message || String(e);
+      } finally {
+        this.categoryRuleSaving = false;
       }
     },
     close() {

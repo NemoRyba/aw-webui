@@ -16,6 +16,11 @@ b-modal(id="edit" ref="edit" title="Edit category" @show="resetModal" @hidden="h
     div(v-if="editing.rule.type === 'regex'")
       b-input-group.my-1(prepend="Pattern")
         b-form-input(v-model="editing.rule.regex")
+      b-input-group.my-1(prepend="Fields")
+        b-form-input(
+          v-model="editing.select_keys_text"
+          placeholder="app,title"
+        )
       div.d-flex
         div.flex-grow-1
           b-form-checkbox(v-model="editing.rule.ignore_case" switch)
@@ -76,6 +81,7 @@ export default {
         name: null,
         rule: {},
         parent: [],
+        select_keys_text: '',
         inherit_color: true,
         color: null,
         inherit_score: true,
@@ -146,10 +152,21 @@ export default {
       }
 
       // Save the category
+      const rule = _.cloneDeep(this.editing.rule);
+      const select_keys = String(this.editing.select_keys_text || '')
+        .split(',')
+        .map(key => key.trim())
+        .filter(key => key.length > 0);
+      if (select_keys.length > 0) {
+        rule.select_keys = select_keys;
+      } else {
+        delete rule.select_keys;
+      }
+
       const new_class = {
         id: this.editing.id,
         name: this.editing.parent.concat(this.editing.name),
-        rule: this.editing.rule.type !== 'none' ? this.editing.rule : { type: 'none' },
+        rule: this.editing.rule.type !== 'none' ? rule : { type: 'none' },
         data: {
           color: this.editing.inherit_color === true ? undefined : this.editing.color,
           score: this.editing.inherit_score === true ? undefined : this.editing.score,
@@ -173,6 +190,7 @@ export default {
         name: cat.subname,
         rule: _.cloneDeep(cat.rule),
         parent: cat.parent ? cat.parent : [],
+        select_keys_text: (cat.rule.select_keys || []).join(','),
         color,
         inherit_color,
         score,
