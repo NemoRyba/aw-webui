@@ -55,6 +55,7 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     End: 'Ende',
     'Apply range': 'Zeitraum anwenden',
     'Previous day': 'Vorheriger Tag',
+    'Next day': 'Nächster Tag',
     Active: 'Aktiv',
     'Active time': 'Aktivzeit',
     'Total time': 'Gesamtzeit',

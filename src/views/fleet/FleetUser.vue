@@ -20,14 +20,22 @@ div
 
   b-card.mb-3
     div.fleet-user-range-shortcuts.mb-2
-      b-button(
-        size="sm"
-        variant="outline-secondary"
-        :title="$tr('Previous day')"
-        @click="shiftRangeDays(-1)"
-      )
-        icon(name="arrow-left")
-        span.ml-1 {{ $tr('Previous day') }}
+      b-button-group(size="sm")
+        b-button(
+          variant="outline-secondary"
+          :title="$tr('Previous day')"
+          @click="shiftRangeDays(-1)"
+        )
+          icon(name="arrow-left")
+          span.ml-1 {{ $tr('Previous day') }}
+        b-button(
+          variant="outline-secondary"
+          :title="$tr('Next day')"
+          :disabled="!canShiftNextDay"
+          @click="shiftRangeDays(1)"
+        )
+          span.mr-1 {{ $tr('Next day') }}
+          icon(name="arrow-right")
     div.row
       div.col-md-4
         label.small.text-muted(for="fleet-user-start") {{ $tr('Start') }}
@@ -109,6 +117,7 @@ div
 <script lang="ts">
 import moment from 'moment';
 import 'vue-awesome/icons/arrow-left';
+import 'vue-awesome/icons/arrow-right';
 
 import { useSettingsStore } from '~/stores/settings';
 import { useFleetStore } from '~/stores/fleet';
@@ -221,6 +230,13 @@ export default {
       const selected = this.isAllDevicesSelected() ? total : this.selectedDeviceIds.length;
       return this.$tr('{selected} of {total} device(s) selected', { selected, total });
     },
+    canShiftNextDay() {
+      const end = moment(this.endDate, 'YYYY-MM-DD', true);
+      if (!end.isValid()) {
+        return false;
+      }
+      return end.isBefore(moment().startOf('day'), 'day');
+    },
   },
   watch: {
     username: async function () {
@@ -262,6 +278,9 @@ export default {
       const start = moment(this.startDate);
       const end = moment(this.endDate);
       if (!start.isValid() || !end.isValid()) {
+        return;
+      }
+      if (days > 0 && !this.canShiftNextDay) {
         return;
       }
 
@@ -329,7 +348,7 @@ export default {
 
 .fleet-user-range-shortcuts {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 @media (max-width: 575.98px) {
