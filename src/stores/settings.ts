@@ -30,6 +30,7 @@ interface State {
   afkOverlayColor: string;
   fleetSummaryShowAfkTime: boolean;
   fleetSummaryIgnoreAudibleBrowserTime: boolean;
+  fleetSummaryExcludeInactiveSessionAfk: boolean;
   landingpage: string;
   theme: 'light' | 'dark' | 'auto';
 
@@ -66,6 +67,7 @@ export const useSettingsStore = defineStore('settings', {
     afkOverlayColor: '#ff4d4f',
     fleetSummaryShowAfkTime: false,
     fleetSummaryIgnoreAudibleBrowserTime: false,
+    fleetSummaryExcludeInactiveSessionAfk: true,
     landingpage: '/home',
 
     theme: 'auto',

@@ -87,6 +87,9 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Filter app, title, URL, device...': 'App, Titel, URL, Gerät filtern...',
     'Show AFK time': 'AFK-Zeit anzeigen',
     'Subtract AFK time': 'AFK-Zeit abziehen',
+    'Only count AFK while session is active': 'AFK nur bei aktiver Sitzung zählen',
+    'AFK during locked, disconnected, logged-in-only, or unavailable sessions is excluded from the AFK totals.':
+      'AFK während gesperrter, getrennter, nur angemeldeter oder nicht verfügbarer Sitzungen wird aus den AFK-Summen ausgeschlossen.',
     'Show percent': 'Prozent anzeigen',
     'Events counted: {count}': 'Gezählte Ereignisse: {count}',
     'No data': 'Keine Daten',
@@ -464,6 +467,8 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Subtract AFK time by default': 'AFK-Zeit standardmäßig abziehen',
     'Count audible browser tab as active by default':
       'Hörbaren Browser-Tab standardmäßig als aktiv zählen',
+    'Only count AFK while session is active by default':
+      'AFK nur bei aktiver Sitzung standardmäßig zählen',
     Enabled: 'Aktiviert',
     Disabled: 'Deaktiviert',
     'Use fallback colors': 'Fallback-Farben verwenden',

@@ -106,6 +106,7 @@ export interface IFleetUserDeviceOption {
 export interface IFleetUserDetail {
   username: string;
   range: { start: string; end: string };
+  filters?: { exclude_inactive_session_afk?: boolean };
   devices: string[];
   available_devices: IFleetUserDeviceOption[];
   selected_devices: string[];
@@ -127,6 +128,7 @@ export interface IFleetDeviceDetail {
   status: string;
   last_updated?: string | null;
   range: { start: string; end: string };
+  filters?: { exclude_inactive_session_afk?: boolean };
   totals: IFleetTotals;
   apps: Array<{
     username: string;

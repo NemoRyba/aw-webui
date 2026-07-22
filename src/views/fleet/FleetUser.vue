@@ -42,6 +42,14 @@ div
         :options="deviceOptions"
         stacked
       )
+    div.mt-3
+      b-form-checkbox(
+        v-model="excludeInactiveSessionAfk"
+        @change="refresh"
+      )
+        | {{ $tr('Only count AFK while session is active') }}
+      div.small.text-muted.ml-4
+        | {{ $tr('AFK during locked, disconnected, logged-in-only, or unavailable sessions is excluded from the AFK totals.') }}
 
   b-alert(show variant="info" v-if="!user")
     | {{ $tr('No data found for this user.') }}
@@ -230,6 +238,14 @@ export default {
       const selected = this.isAllDevicesSelected() ? total : this.selectedDeviceIds.length;
       return this.$tr('{selected} of {total} device(s) selected', { selected, total });
     },
+    excludeInactiveSessionAfk: {
+      get() {
+        return this.settingsStore.fleetSummaryExcludeInactiveSessionAfk;
+      },
+      set(value) {
+        this.settingsStore.update({ fleetSummaryExcludeInactiveSessionAfk: Boolean(value) });
+      },
+    },
   },
   watch: {
     username: async function () {
@@ -275,6 +291,7 @@ export default {
       if (!this.isAllDevicesSelected()) {
         params.device_ids = this.selectedDeviceIds.join(',');
       }
+      params.exclude_inactive_session_afk = this.excludeInactiveSessionAfk ? 'true' : 'false';
       return params;
     },
     async refresh() {
