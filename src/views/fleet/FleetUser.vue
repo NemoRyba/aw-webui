@@ -129,7 +129,7 @@ export default {
     return {
       fleetStore: useFleetStore(),
       settingsStore: useSettingsStore(),
-      startDate: moment().subtract(6, 'days').format('YYYY-MM-DD'),
+      startDate: moment().format('YYYY-MM-DD'),
       endDate: moment().format('YYYY-MM-DD'),
       selectedDeviceIds: [],
       tableKeys: {

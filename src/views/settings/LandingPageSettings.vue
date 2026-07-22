@@ -6,6 +6,7 @@ div
     div
       b-select.landingpage(v-if="loaded" size="sm" :value="landingpage", @change="landingpage = $event")
         option(value="/home") {{ $tr('Home') }}
+        option(value="/fleet") {{ $tr('Fleet') }}
         option(:value="'/activity/' + hostname + '/view/'" v-for="hostname in hostnames")
           | {{ $tr('Activity') }} ({{hostname}})
         option(value="/timeline") {{ $tr('Timeline') }}

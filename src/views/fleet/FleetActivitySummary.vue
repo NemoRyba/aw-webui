@@ -57,15 +57,34 @@ div.fleet-activity-summary.mb-3
     div.col-12.mb-3
       div.fleet-summary-panel.fleet-summary-panel--timeline
         h6.mb-3 {{ $tr('Timeline (barchart)') }}
-        div.fleet-chart-scroll
-          div.fleet-chart(:style="{ minWidth: timelineChartMinWidth }")
-            bar(
-              v-if="timelineDatasets.length > 0"
-              :chart-data="timelineChartData"
-              :chart-options="timelineChartOptions"
-              :height="440"
-            )
-            div.fleet-summary-empty(v-else) {{ $tr('No data') }}
+        div.fleet-timeline-chart(v-if="timelineDatasets.length > 0")
+          div.fleet-y-axis(:style="{ color: chartTextColor }")
+            div.fleet-y-axis-unit {{ $tr('Hours') }}
+            div(
+              v-for="tick in timelineYAxisTicks"
+              :key="tick.value"
+              class="fleet-y-axis-tick"
+              :style="{ top: tick.top }"
+            ) {{ tick.label }}
+          div.fleet-chart-scroll
+            div.fleet-chart(:style="{ minWidth: timelineChartMinWidth }")
+              bar(
+                :chart-data="timelineChartData"
+                :chart-options="timelineChartOptions"
+                :plugins="timelineChartPlugins"
+                :height="440"
+              )
+        div.fleet-summary-empty(v-else) {{ $tr('No data') }}
+
+    div.col-12.mb-3
+      div.fleet-summary-panel.fleet-summary-panel--category-tree
+        h6.mb-3 {{ $tr('Category Tree') }}
+        aw-categorytree(
+          :events="categorizedWindowEvents"
+          show_colors
+          horizontal
+          show_apps
+        )
 
     div.col-md-6.col-xl-4.mb-3
       div.fleet-summary-panel
@@ -97,11 +116,6 @@ div.fleet-activity-summary.mb-3
           :colorfunc="categoryName"
           with_limit
         )
-
-    div.col-md-6.col-xl-4.mb-3
-      div.fleet-summary-panel
-        h6.mb-3 {{ $tr('Category Tree') }}
-        aw-categorytree(:events="topCategoryEvents")
 
     div.col-md-12.col-xl-4.mb-3
       div.fleet-summary-panel.fleet-summary-panel--sunburst
@@ -249,6 +263,8 @@ export default {
       countAudibleBrowserTime: !settingsStore.fleetSummaryIgnoreAudibleBrowserTime,
       textFilter: '',
       activeWindowEvents: [],
+      timelineChartArea: null,
+      loadRequestId: 0,
     };
   },
   computed: {
@@ -403,9 +419,9 @@ export default {
 
       return bins;
     },
-    timelineDatasets() {
+    timelineSeries() {
       if (this.timelineBins.length === 0 || this.categorizedWindowEvents.length === 0) {
-        return [];
+        return { datasets: [], afkData: [] };
       }
 
       const topCategoryKeys = this.topCategoryEvents
@@ -413,6 +429,35 @@ export default {
         .map(event => categoryKey(event.data.$category));
       const topCategorySet = new Set(topCategoryKeys);
       const datasetByCategory = {};
+      const afkData = Array.from({ length: this.timelineBins.length }, () => 0);
+
+      const createDetail = () => ({
+        duration: 0,
+        afkDuration: 0,
+        apps: new Map(),
+        titles: new Map(),
+        categories: new Map(),
+      });
+      const ensureDetail = (dataset, index) => {
+        if (!dataset.details[index]) {
+          dataset.details[index] = createDetail();
+        }
+        return dataset.details[index];
+      };
+      const addDetailValue = (values, label, seconds) => {
+        const normalizedLabel = String(label || UNKNOWN);
+        values.set(normalizedLabel, Number(values.get(normalizedLabel) || 0) + seconds);
+      };
+      const scaleDetail = (detail, scale) => {
+        if (!detail) {
+          return;
+        }
+        detail.duration *= scale;
+        detail.afkDuration *= scale;
+        [detail.apps, detail.titles, detail.categories].forEach(values => {
+          values.forEach((duration, label) => values.set(label, duration * scale));
+        });
+      };
 
       const ensureDataset = (key, category) => {
         if (!datasetByCategory[key]) {
@@ -420,6 +465,7 @@ export default {
             key,
             category,
             data: Array.from({ length: this.timelineBins.length }, () => 0),
+            details: Array.from({ length: this.timelineBins.length }, () => null),
           };
         }
         return datasetByCategory[key];
@@ -439,7 +485,24 @@ export default {
         this.timelineBins.forEach((bin, index) => {
           const seconds = this.overlapSeconds(eventStart, eventEnd, bin.start, bin.end);
           if (seconds > 0) {
-            dataset.data[index] += seconds / 3600;
+            const hours = seconds / 3600;
+            dataset.data[index] += hours;
+            if (event.data?.$afk) {
+              afkData[index] += hours;
+            }
+
+            const detail = ensureDetail(dataset, index);
+            detail.duration += seconds;
+            if (event.data?.$afk) {
+              detail.afkDuration += seconds;
+            }
+            addDetailValue(
+              detail.apps,
+              event.data.app || event.data.process_name || UNKNOWN,
+              seconds
+            );
+            addDetailValue(detail.titles, event.data.title || '(no title)', seconds);
+            addDetailValue(detail.categories, eventCategory.join(' > '), seconds);
           }
         });
       }
@@ -453,19 +516,43 @@ export default {
           const scale = binCapacity / binTotal;
           datasets.forEach(dataset => {
             dataset.data[index] *= scale;
+            scaleDetail(dataset.details[index], scale);
           });
+          afkData[index] *= scale;
         }
+
+        const visibleTotal = _.sumBy(datasets, dataset => Number(dataset.data[index] || 0));
+        afkData[index] = Math.min(afkData[index], visibleTotal, binCapacity);
       });
 
-      return datasets.map((dataset: any) => {
-        const isOther = dataset.key === 'Other';
-        const category = dataset.category;
-        return {
-          label: category.join(' > '),
-          backgroundColor: isOther ? '#adb5bd' : this.categoryStore.get_category_color(category),
-          data: dataset.data.map(value => Math.round(value * 1000) / 1000),
-        };
-      });
+      return {
+        datasets: datasets.map((dataset: any) => {
+          const isOther = dataset.key === 'Other';
+          const category = dataset.category;
+          return {
+            label: category.join(' > '),
+            backgroundColor: isOther ? '#adb5bd' : this.categoryStore.get_category_color(category),
+            data: dataset.data.map(value => Math.round(value * 1000) / 1000),
+            $timelineDetails: dataset.details.map(detail =>
+              this.serializeTimelineDetail(detail, isOther)
+            ),
+          };
+        }),
+        afkData: afkData.map(value => Math.round(value * 1000) / 1000),
+      };
+    },
+    timelineDatasets() {
+      return this.timelineSeries.datasets;
+    },
+    timelineAfkData() {
+      return this.timelineSeries.afkData;
+    },
+    timelineChartPlugins() {
+      return [
+        this.timelineAfkOverlayPlugin,
+        this.timelineAxisTooltipPlugin,
+        this.timelineChartAreaPlugin,
+      ];
     },
     timelineChartData() {
       return {
@@ -485,6 +572,69 @@ export default {
       }
       return Math.ceil(Math.max(...this.timelineBins.map(bin => this.binCapacityHours(bin))));
     },
+    timelineYTickStep() {
+      const max = Number(this.timelineYAxisMax || 0);
+      if (max <= 1) {
+        return 0.25;
+      }
+      if (max <= 6) {
+        return 1;
+      }
+      if (max <= 12) {
+        return 2;
+      }
+      if (max <= 24) {
+        return 4;
+      }
+      if (max <= 48) {
+        return 8;
+      }
+
+      const roughStep = max / 6;
+      const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
+      const normalized = roughStep / magnitude;
+      if (normalized <= 1) {
+        return magnitude;
+      }
+      if (normalized <= 2) {
+        return 2 * magnitude;
+      }
+      if (normalized <= 5) {
+        return 5 * magnitude;
+      }
+      return 10 * magnitude;
+    },
+    timelineYAxisTicks() {
+      const max = Number(this.timelineYAxisMax || 0);
+      if (max <= 0) {
+        return [];
+      }
+
+      const step = Number(this.timelineYTickStep || 1);
+      const values = [];
+      for (let value = 0; value <= max + step / 10; value += step) {
+        values.push(Math.min(max, value));
+      }
+      if (values[values.length - 1] !== max) {
+        values.push(max);
+      }
+
+      const chartArea = this.timelineChartArea || {};
+      const areaTop = Number(chartArea.top ?? 20);
+      const areaBottom = Number(chartArea.bottom ?? 380);
+      const areaHeight = Math.max(1, areaBottom - areaTop);
+
+      return _.uniq(values)
+        .map(value => {
+          const tickTop = areaTop + areaHeight * (1 - value / max);
+          return {
+            value,
+            label: this.formatTimelineAxisTick(value),
+            top: `${tickTop}px`,
+          };
+        })
+        .reverse();
+    },
     activeTheme() {
       const theme = this.settingsStore.theme || 'auto';
       return theme === 'auto' ? detectPreferredTheme() : theme;
@@ -497,27 +647,58 @@ export default {
     },
     timelineChartOptions(): ChartOptions {
       const formatDuration = value => seconds_to_duration(Number(value || 0) * 3600);
-      return {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          tooltip: {
-            mode: 'point',
-            intersect: false,
-            callbacks: {
-              label(context) {
-                return `${context.dataset.label}: ${formatDuration(context.parsed.y)}`;
-              },
+      const afkData = this.timelineAfkData;
+      const afkLabel = this.$tr('AFK time');
+      const totalTimeLabel = this.$tr('Total time');
+      const formatTooltipDetail = this.formatTimelineTooltipDetail.bind(this);
+      const plugins: any = {
+        tooltip: {
+          mode: 'point',
+          intersect: false,
+          callbacks: {
+            label(context) {
+              return `${context.dataset.label}: ${formatDuration(context.parsed.y)}`;
             },
-          },
-          legend: {
-            position: 'bottom',
-            labels: {
-              boxWidth: 12,
-              color: this.chartTextColor,
+            afterLabel(context) {
+              const dataset: any = context.dataset;
+              return formatTooltipDetail(
+                dataset?.$timelineDetails?.[context.dataIndex],
+                dataset?.label
+              );
+            },
+            footer(items) {
+              const index = items?.[0]?.dataIndex;
+              const chart: any = items?.[0]?.chart;
+              if (chart?.$fleetAxisHoverIndex !== index) {
+                return '';
+              }
+
+              const totalHours = _.sumBy(chart.data.datasets || [], (dataset: any) => {
+                const values = Array.isArray(dataset.data) ? dataset.data : [];
+                return Number(values[index] || 0);
+              });
+              const afkHours = Number(afkData?.[index] || 0);
+              const lines = [`${totalTimeLabel}: ${formatDuration(totalHours)}`];
+              if (afkHours > 0) {
+                lines.push(`${afkLabel}: ${formatDuration(afkHours)}`);
+              }
+              return lines;
             },
           },
         },
+        legend: {
+          display: false,
+        },
+        fleetTimelineAfkOverlay: {
+          afkData,
+          color: this.settingsStore.afkOverlayColor || '#ff4d4f',
+        },
+      };
+
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins,
         scales: {
           x: {
             stacked: true,
@@ -534,15 +715,118 @@ export default {
             max: this.timelineYAxisMax,
             grid: {
               color: this.chartGridColor,
+              drawBorder: false,
+              drawTicks: false,
             },
             ticks: {
+              display: false,
               color: this.chartTextColor,
+              stepSize: this.timelineYTickStep,
               callback(value) {
                 const hours = Number(value || 0);
                 return hours >= 1 ? `${hours}h` : `${Math.round(hours * 60)}m`;
               },
             },
           },
+        },
+      };
+    },
+    timelineAfkOverlayPlugin() {
+      return {
+        id: 'fleetTimelineAfkOverlay',
+        afterDatasetsDraw: (chart, _args, pluginOptions: any) => {
+          const afkData = Array.isArray(pluginOptions?.afkData) ? pluginOptions.afkData : [];
+          const overlayColor = pluginOptions?.color || '#ff4d4f';
+          const { ctx, chartArea } = chart;
+          const xScale = chart.scales?.x;
+          const yScale = chart.scales?.y;
+          if (!ctx || !chartArea || !xScale || !yScale) {
+            return;
+          }
+
+          const barMetas = chart.getSortedVisibleDatasetMetas().filter(meta => meta.type === 'bar');
+
+          afkData.forEach((afkHours, index) => {
+            const visibleAfkHours = Number(afkHours || 0);
+            if (visibleAfkHours <= 0) {
+              return;
+            }
+
+            const totalHours = _.sumBy(chart.data.datasets || [], (dataset: any) => {
+              const values = Array.isArray(dataset.data) ? dataset.data : [];
+              return Number(values[index] || 0);
+            });
+            if (totalHours <= 0) {
+              return;
+            }
+
+            const sampleBar = barMetas
+              .map(meta => meta.data?.[index])
+              .find(element => element && !element.hidden);
+            const barWidth = Number(sampleBar?.width || 0);
+            if (barWidth <= 0) {
+              return;
+            }
+
+            const x = Number(sampleBar?.x || xScale.getPixelForValue(index));
+            const baseY = yScale.getPixelForValue(0);
+            const totalY = yScale.getPixelForValue(totalHours);
+            const barHeight = Math.abs(baseY - totalY);
+            if (barHeight <= 0) {
+              return;
+            }
+
+            const overlayHeight = barHeight * Math.min(1, visibleAfkHours / totalHours);
+            const left = x - barWidth / 2;
+            const right = x + barWidth / 2;
+            const bottom = Math.min(baseY, chartArea.bottom);
+            const overlayTop = bottom - overlayHeight;
+            this.drawAfkTimelineOverlay(ctx, left, overlayTop, right, bottom, overlayColor);
+          });
+        },
+      };
+    },
+    timelineAxisTooltipPlugin() {
+      return {
+        id: 'fleetTimelineAxisTooltip',
+        afterEvent: (chart, args) => {
+          this.handleTimelineAxisTooltipEvent(chart, args);
+        },
+      };
+    },
+    timelineChartAreaPlugin() {
+      return {
+        id: 'fleetTimelineChartArea',
+        afterLayout: chart => {
+          const area = chart.chartArea;
+          if (!area) {
+            return;
+          }
+
+          const nextArea = {
+            top: Math.round(area.top),
+            right: Math.round(area.right),
+            bottom: Math.round(area.bottom),
+            left: Math.round(area.left),
+          };
+          const currentArea = this.timelineChartArea || {};
+          if (
+            currentArea.top === nextArea.top &&
+            currentArea.right === nextArea.right &&
+            currentArea.bottom === nextArea.bottom &&
+            currentArea.left === nextArea.left
+          ) {
+            return;
+          }
+
+          const update = () => {
+            this.timelineChartArea = nextArea;
+          };
+          if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+            window.requestAnimationFrame(update);
+          } else {
+            update();
+          }
         },
       };
     },
@@ -562,6 +846,8 @@ export default {
       }
 
       const requestKey = this.reloadKey;
+      const requestId = this.loadRequestId + 1;
+      this.loadRequestId = requestId;
       this.loading = true;
       this.loadError = '';
 
@@ -572,7 +858,7 @@ export default {
 
         const buckets = await this.loadSummaryBuckets();
 
-        if (requestKey !== this.reloadKey) {
+        if (requestId !== this.loadRequestId || requestKey !== this.reloadKey) {
           return;
         }
 
@@ -582,7 +868,7 @@ export default {
         this.loadError = this.$tr('Unable to load activity summary');
         this.activeWindowEvents = [];
       } finally {
-        if (requestKey === this.reloadKey) {
+        if (requestId === this.loadRequestId) {
           this.loading = false;
         }
       }
@@ -1171,8 +1457,188 @@ export default {
       existing.duration += Number(event.duration || 0);
       groupedItem.colorSegmentsByCategory.set(key, existing);
     },
+    serializeTimelineDetail(detail, includeCategories = false) {
+      if (!detail || detail.duration <= 0) {
+        return null;
+      }
+
+      const toSortedList = values =>
+        _.orderBy(
+          Array.from(values.entries()).map(([label, duration]) => ({
+            label,
+            duration: Math.round(Number(duration || 0)),
+          })),
+          ['duration'],
+          ['desc']
+        ).filter(item => item.duration > 0);
+
+      return {
+        duration: Math.round(Number(detail.duration || 0)),
+        afkDuration: Math.round(Number(detail.afkDuration || 0)),
+        apps: toSortedList(detail.apps),
+        titles: toSortedList(detail.titles),
+        categories: includeCategories ? toSortedList(detail.categories) : [],
+      };
+    },
+    formatTimelineTooltipDetail(detail, datasetLabel = '') {
+      if (!detail || detail.duration <= 0) {
+        return [];
+      }
+
+      const lines = [];
+      if (datasetLabel === 'Other') {
+        this.addTimelineTooltipSection(lines, this.$tr('Top Categories'), detail.categories, 4);
+      }
+      this.addTimelineTooltipSection(lines, this.$tr('Top Applications'), detail.apps, 4);
+      this.addTimelineTooltipSection(lines, this.$tr('Top Window Titles'), detail.titles, 4, 72);
+
+      return lines;
+    },
+    addTimelineTooltipSection(lines, title, entries, limit = 4, maxLabelLength = 48) {
+      const visibleEntries = (entries || []).slice(0, limit);
+      if (visibleEntries.length === 0) {
+        return;
+      }
+
+      if (lines.length > 0) {
+        lines.push('');
+      }
+      lines.push(title);
+      visibleEntries.forEach(entry => {
+        lines.push(
+          `${this.truncateTimelineTooltipLabel(entry.label, maxLabelLength)}: ${seconds_to_duration(
+            entry.duration
+          )}`
+        );
+      });
+    },
+    truncateTimelineTooltipLabel(label, maxLength = 48) {
+      const text = String(label || UNKNOWN);
+      if (text.length <= maxLength) {
+        return text;
+      }
+      return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+    },
     categoryName(event) {
       return (event.data.$category || ['Uncategorized']).join(' > ');
+    },
+    formatTimelineAxisTick(value) {
+      const hours = Number(value || 0);
+      return hours >= 1 ? `${hours}h` : `${Math.round(hours * 60)}m`;
+    },
+    handleTimelineAxisTooltipEvent(chart, args) {
+      const event = args?.event;
+      const chartArea = chart?.chartArea;
+      const xScale = chart?.scales?.x;
+      if (!event || !chartArea || !xScale || !chart?.tooltip) {
+        return;
+      }
+
+      if (event.type === 'mouseout') {
+        this.clearTimelineAxisTooltip(chart, args, event);
+        return;
+      }
+
+      const x = Number(event.x);
+      const y = Number(event.y);
+      const insidePlot =
+        x >= chartArea.left && x <= chartArea.right && y >= chartArea.top && y < chartArea.bottom;
+      if (insidePlot) {
+        delete chart.$fleetAxisHoverIndex;
+        chart.canvas.style.cursor = '';
+        return;
+      }
+
+      const insideAxisLabels =
+        x >= chartArea.left && x <= chartArea.right && y >= chartArea.bottom && y <= chart.height;
+      if (!insideAxisLabels) {
+        this.clearTimelineAxisTooltip(chart, args, event);
+        return;
+      }
+
+      const index = this.timelineIndexFromPixel(chart, x);
+      const activeElements = this.timelineActiveElementsForIndex(chart, index);
+      if (activeElements.length === 0) {
+        this.clearTimelineAxisTooltip(chart, args, event);
+        return;
+      }
+
+      if (chart.$fleetAxisHoverIndex === index) {
+        chart.canvas.style.cursor = 'help';
+        return;
+      }
+
+      chart.$fleetAxisHoverIndex = index;
+      chart.canvas.style.cursor = 'help';
+      const tooltipX = xScale.getPixelForValue(index);
+      const tooltipY = Math.min(chart.height, chartArea.bottom + 8);
+      chart.tooltip.setActiveElements(activeElements, { x: tooltipX, y: tooltipY });
+      chart.setActiveElements(activeElements);
+      args.changed = true;
+    },
+    timelineIndexFromPixel(chart, x) {
+      const labels = chart?.data?.labels || [];
+      const xScale = chart?.scales?.x;
+      if (!xScale || labels.length === 0) {
+        return -1;
+      }
+
+      let index = Number(xScale.getValueForPixel(x));
+      if (!Number.isFinite(index)) {
+        index = _.minBy(_.range(labels.length), candidateIndex =>
+          Math.abs(Number(xScale.getPixelForValue(candidateIndex)) - x)
+        );
+      }
+      index = Math.round(index);
+
+      if (index < 0 || index >= labels.length) {
+        return -1;
+      }
+
+      const center = Number(xScale.getPixelForValue(index));
+      const prev = index > 0 ? Number(xScale.getPixelForValue(index - 1)) : center;
+      const next = index < labels.length - 1 ? Number(xScale.getPixelForValue(index + 1)) : center;
+      const neighborDistance = Math.max(Math.abs(center - prev), Math.abs(next - center), 16);
+      const maxDistance = Math.max(12, neighborDistance / 2);
+      return Math.abs(x - center) <= maxDistance ? index : -1;
+    },
+    timelineActiveElementsForIndex(chart, index) {
+      if (index < 0) {
+        return [];
+      }
+
+      return (chart?.data?.datasets || [])
+        .map((dataset, datasetIndex) => {
+          const values = Array.isArray(dataset.data) ? dataset.data : [];
+          const value = Number(values[index] || 0);
+          return { datasetIndex, index, value };
+        })
+        .filter(item => {
+          return (
+            item.value > 0 && (!chart.isDatasetVisible || chart.isDatasetVisible(item.datasetIndex))
+          );
+        })
+        .map(item => ({
+          datasetIndex: item.datasetIndex,
+          index: item.index,
+        }));
+    },
+    clearTimelineAxisTooltip(chart, args, event) {
+      const hadAxisHover = chart?.$fleetAxisHoverIndex !== undefined;
+      delete chart.$fleetAxisHoverIndex;
+      if (chart?.canvas) {
+        chart.canvas.style.cursor = '';
+      }
+      if (!hadAxisHover || !chart?.tooltip) {
+        return;
+      }
+
+      chart.tooltip.setActiveElements([], {
+        x: Number(event?.x || 0),
+        y: Number(event?.y || 0),
+      });
+      chart.setActiveElements([]);
+      args.changed = true;
     },
     overlapSeconds(start, end, otherStart, otherEnd) {
       const overlapStart = moment.max(start, otherStart);
@@ -1184,6 +1650,36 @@ export default {
     },
     binCapacityHours(bin) {
       return Math.max(1 / 60, moment(bin.end).diff(moment(bin.start), 'hours', true));
+    },
+    drawAfkTimelineOverlay(ctx, left, overlayTop, right, bottom, color) {
+      const width = right - left;
+      const height = bottom - overlayTop;
+      if (width <= 0 || height <= 0) {
+        return;
+      }
+
+      const spacing = 9;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(left, overlayTop, width, height);
+      ctx.clip();
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.9;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(
+        left + 0.75,
+        overlayTop + 0.75,
+        Math.max(0, width - 1.5),
+        Math.max(0, height - 1.5)
+      );
+
+      for (let x = left - height; x < right + height; x += spacing) {
+        ctx.beginPath();
+        ctx.moveTo(x, bottom);
+        ctx.lineTo(x + height, overlayTop);
+        ctx.stroke();
+      }
+      ctx.restore();
     },
     formatBinLabel(start, end, unit) {
       const displayEnd = moment(end).clone().subtract(1, 'millisecond');
@@ -1239,7 +1735,42 @@ export default {
   overflow: hidden;
 }
 
+.fleet-timeline-chart {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.fleet-y-axis {
+  position: relative;
+  flex: 0 0 3.4rem;
+  height: 28rem;
+  padding-right: 0.45rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.fleet-y-axis-unit {
+  position: absolute;
+  top: 0;
+  left: 0;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+.fleet-y-axis-tick {
+  position: absolute;
+  right: 0.45rem;
+  line-height: 1;
+  opacity: 0.8;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
 .fleet-chart-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
   width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
