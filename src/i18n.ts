@@ -151,6 +151,7 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Fleet Live': 'Live-Geräte',
     'Fleet Devices': 'Geräte',
     'Fleet Users': 'Benutzer',
+    'Select user': 'Benutzer auswählen',
     'Live devices': 'Live-Geräte',
     'Server storage': 'Server-Speicher',
     Calculated: 'Berechnet',

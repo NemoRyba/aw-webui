@@ -7,8 +7,16 @@ div
       h3.mb-0 {{ $tr('User') }} {{ username }}
       div.text-muted.small(v-if="user")
         | {{ deviceCountLabel }}
-    b-button.ml-auto(size="sm" variant="outline-dark" @click="refresh")
-      | {{ $tr('Refresh') }}
+    div.fleet-user-actions.ml-auto
+      b-form-select.fleet-user-select(
+        size="sm"
+        :value="username"
+        :options="userOptions"
+        :aria-label="$tr('Select user')"
+        @change="selectUser"
+      )
+      b-button(size="sm" variant="outline-dark" @click="refresh")
+        | {{ $tr('Refresh') }}
 
   b-card.mb-3
     div.row
@@ -172,6 +180,30 @@ export default {
     user() {
       return this.fleetStore.userDetails[this.username] || null;
     },
+    userOptions() {
+      const usersByName = new Map();
+
+      for (const user of this.fleetStore.users || []) {
+        if (!user || !user.username) {
+          continue;
+        }
+        usersByName.set(user.username, {
+          value: user.username,
+          text: user.username,
+        });
+      }
+
+      if (this.username && !usersByName.has(this.username)) {
+        usersByName.set(this.username, {
+          value: this.username,
+          text: this.username,
+        });
+      }
+
+      return Array.from(usersByName.values()).sort((left, right) =>
+        left.text.localeCompare(right.text)
+      );
+    },
     deviceCountLabel() {
       if (!this.user) {
         return '';
@@ -205,9 +237,20 @@ export default {
     },
   },
   async mounted() {
+    await this.loadUsers();
     await this.refresh();
   },
   methods: {
+    async loadUsers() {
+      await this.fleetStore.loadUsers();
+    },
+    selectUser(username) {
+      if (!username || username === this.username) {
+        return;
+      }
+
+      this.$router.push(`/fleet/users/${encodeURIComponent(username)}`);
+    },
     isAllDevicesSelected() {
       if (!this.user || this.user.available_devices.length === 0) {
         return true;
@@ -269,3 +312,27 @@ export default {
   },
 };
 </script>
+
+<style scoped lang="scss">
+.fleet-user-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fleet-user-select {
+  width: min(18rem, 42vw);
+}
+
+@media (max-width: 575.98px) {
+  .fleet-user-actions {
+    margin-top: 0.75rem;
+    width: 100%;
+  }
+
+  .fleet-user-select {
+    flex: 1 1 auto;
+    width: auto;
+  }
+}
+</style>
