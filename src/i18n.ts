@@ -176,6 +176,8 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
       'Es wurden noch keine Watcher-Daten gefunden. Starte `aw-watcher-session`, `aw-watcher-afk` und `aw-watcher-window` im Zentralmodus, um diese Ansicht zu füllen.',
     'No data found for this user.': 'Keine Daten für diesen Benutzer gefunden.',
     'No data found for this device.': 'Keine Daten für dieses Gerät gefunden.',
+    'Daily watcher timeline': 'Tägliche Watcher-Zeitachse',
+    'Events shown: {count}': 'Angezeigte Ereignisse: {count}',
     'No app data found in the selected range': 'Keine App-Daten im gewählten Zeitraum gefunden',
     'No live sessions for this user': 'Keine Live-Sitzungen für diesen Benutzer',
     'No live sessions for this device': 'Keine Live-Sitzungen für dieses Gerät',

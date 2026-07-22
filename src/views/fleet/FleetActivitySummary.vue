@@ -76,6 +76,47 @@ div.fleet-activity-summary.mb-3
               )
         div.fleet-summary-empty(v-else) {{ $tr('No data') }}
 
+    div.col-12.mb-3(v-if="isSingleDayRange")
+      div.fleet-summary-panel.fleet-summary-panel--daily-watchers
+        div.d-flex.flex-wrap.align-items-center.justify-content-between.mb-2
+          div
+            h6.mb-1 {{ $tr('Daily watcher timeline') }}
+            div.small.text-muted
+              | {{ $tr('Events shown: {count}', { count: dailyTimelineEventCount }) }}
+          div.fleet-daily-timeline-tools
+            div.fleet-daily-swimlane
+              span.small.text-muted.mr-2 {{ $tr('Swimlanes') }}:
+              b-form-select(
+                v-model="dailyTimelineSwimlane"
+                size="sm"
+                :options="dailyTimelineSwimlaneOptions"
+              )
+            b-button(size="sm" variant="outline-secondary" @click="selectAllDailyWatchers" :disabled="dailyWatcherOptions.length === 0")
+              | {{ $tr('All') }}
+            b-button(size="sm" variant="outline-secondary" @click="clearDailyWatchers" :disabled="dailyWatcherOptions.length === 0")
+              | {{ $tr('None') }}
+        div.small.text-muted.mb-2(v-if="dailyWatcherOptions.length === 0")
+          | {{ $tr('No watchers available for the current selection.') }}
+        div.fleet-daily-watcher-controls.mb-3(v-else)
+          b-form-checkbox(
+            v-for="watcher in dailyWatcherOptions"
+            :key="watcher.value"
+            v-model="selectedDailyWatcherKeys"
+            :value="watcher.value"
+          )
+            | {{ watcher.text }}
+        vis-timeline(
+          v-if="selectedDailyTimelineBuckets.length > 0"
+          :key="dailyTimelineKey"
+          :buckets="selectedDailyTimelineBuckets"
+          :showRowLabels="true"
+          :queriedInterval="dailyTimelineInterval"
+          :windowInterval="dailyTimelineInterval"
+          :swimlane="dailyTimelineSwimlane"
+          :updateTimelineWindow="true"
+        )
+        div.fleet-summary-empty(v-else) {{ $tr('No data') }}
+
     div.col-12.mb-3
       div.fleet-summary-panel.fleet-summary-panel--category-tree
         h6.mb-3 {{ $tr('Category Tree') }}
@@ -263,6 +304,9 @@ export default {
       countAudibleBrowserTime: !settingsStore.fleetSummaryIgnoreAudibleBrowserTime,
       textFilter: '',
       activeWindowEvents: [],
+      rawTimelineBuckets: [],
+      selectedDailyWatcherKeys: [],
+      dailyTimelineSwimlane: null,
       timelineChartArea: null,
       loadRequestId: 0,
     };
@@ -281,6 +325,12 @@ export default {
 
       const end = this.rangeEnd.clone().subtract(1, 'millisecond');
       return `${this.rangeStart.format('MMM D, YYYY')} - ${end.format('MMM D, YYYY')}`;
+    },
+    isSingleDayRange() {
+      if (!this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
+        return false;
+      }
+      return this.rangeEnd.diff(this.rangeStart, 'hours', true) <= 24.5;
     },
     selectedDeviceIds() {
       if (this.user?.selected_devices && this.user.selected_devices.length > 0) {
@@ -568,6 +618,82 @@ export default {
         datasets: this.timelineDatasets,
       };
     },
+    dailyTimelineInterval() {
+      if (!this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
+        return null;
+      }
+      return [this.rangeStart.clone(), this.rangeEnd.clone()];
+    },
+    dailyTimelineSwimlaneOptions() {
+      return [
+        { value: null, text: this.$tr('None') },
+        { value: 'category', text: this.$tr('Categories') },
+        { value: 'bucketType', text: this.$tr('Bucket Specific') },
+      ];
+    },
+    dailyWatcherOptions() {
+      return _.orderBy(
+        this.dailyTimelineBuckets.map(bucket => {
+          const identity = this.bucketIdentity(bucket);
+          return {
+            value: String(bucket.id),
+            text: this.buildDailyTimelineBucketLabel(bucket),
+            sortDeviceName: identity.deviceName,
+            sortSessionId: identity.sessionId,
+            sortWatcherLabel: identity.watcherLabel,
+          };
+        }),
+        [
+          (option: any) => String(option.sortDeviceName || '').toLowerCase(),
+          (option: any) => String(option.sortSessionId || '').toLowerCase(),
+          (option: any) => String(option.sortWatcherLabel || '').toLowerCase(),
+        ],
+        ['asc', 'asc', 'asc']
+      );
+    },
+    dailyWatcherSignature() {
+      return this.dailyWatcherOptions.map(option => option.value).join('|');
+    },
+    dailyTimelineBuckets() {
+      if (!this.isSingleDayRange || !this.dailyTimelineInterval) {
+        return [];
+      }
+
+      return _.orderBy(
+        (this.rawTimelineBuckets || [])
+          .filter(bucket => !this.isHiddenTimelineBucket(bucket))
+          .map(bucket => this.buildDailyTimelineBucket(bucket))
+          .filter(bucket => bucket && bucket.events.length > 0),
+        [
+          (bucket: any) => this.bucketIdentity(bucket).deviceName.toLowerCase(),
+          (bucket: any) => String(bucket.client || '').toLowerCase(),
+          (bucket: any) => String(bucket.id || '').toLowerCase(),
+        ],
+        ['asc', 'asc', 'asc']
+      );
+    },
+    selectedDailyTimelineBuckets() {
+      const selectedKeys = new Set(this.selectedDailyWatcherKeys.map(value => String(value)));
+      if (selectedKeys.size === 0) {
+        return [];
+      }
+      return this.dailyTimelineBuckets.filter(bucket => selectedKeys.has(String(bucket.id)));
+    },
+    dailyTimelineKey() {
+      return [
+        this.user?.username || '',
+        this.user?.range?.start || '',
+        this.user?.range?.end || '',
+        this.selectedDeviceIds.join('|'),
+        this.dailyTimelineSwimlane || 'none',
+        this.selectedDailyWatcherKeys.join('|'),
+      ].join('::');
+    },
+    dailyTimelineEventCount() {
+      return _.sumBy(this.selectedDailyTimelineBuckets, (bucket: any) => {
+        return (bucket.events || []).length;
+      });
+    },
     timelineChartMinWidth() {
       const binCount = Math.max(1, this.timelineBins.length);
       const pxPerBin =
@@ -846,6 +972,9 @@ export default {
         this.loadRawEvents();
       },
     },
+    dailyWatcherSignature() {
+      this.syncDailyTimelineWatchers();
+    },
   },
   methods: {
     async loadRawEvents() {
@@ -870,11 +999,15 @@ export default {
           return;
         }
 
+        this.rawTimelineBuckets = buckets;
         this.activeWindowEvents = this.buildActiveWindowEvents(buckets);
+        this.syncDailyTimelineWatchers();
       } catch (error) {
         console.error('Unable to load fleet activity summary:', error);
         this.loadError = this.$tr('Unable to load activity summary');
         this.activeWindowEvents = [];
+        this.rawTimelineBuckets = [];
+        this.selectedDailyWatcherKeys = [];
       } finally {
         if (requestId === this.loadRequestId) {
           this.loading = false;
@@ -883,9 +1016,12 @@ export default {
     },
     async loadSummaryBuckets() {
       await this.bucketsStore.ensureLoaded();
-      const candidateBuckets = (this.bucketsStore.buckets || []).filter(bucket =>
-        this.isSummaryBucketCandidate(bucket)
-      );
+      const candidateBuckets = (this.bucketsStore.buckets || []).filter(bucket => {
+        if (this.isSingleDayRange) {
+          return this.isDailyTimelineBucketCandidate(bucket);
+        }
+        return this.isSummaryBucketCandidate(bucket);
+      });
 
       return Promise.all(
         candidateBuckets.map(bucket =>
@@ -919,6 +1055,102 @@ export default {
       }
 
       return true;
+    },
+    isDailyTimelineBucketCandidate(bucket) {
+      if (this.isHiddenTimelineBucket(bucket)) {
+        return false;
+      }
+
+      const identity = getBucketIdentity(bucket);
+      if (hasIdentityValue(identity.username) && identity.username !== this.user.username) {
+        return false;
+      }
+      if (
+        this.selectedDeviceSet.size > 0 &&
+        hasIdentityValue(identity.deviceId) &&
+        !this.selectedDeviceSet.has(identity.deviceId)
+      ) {
+        return false;
+      }
+
+      return true;
+    },
+    isHiddenTimelineBucket(bucket) {
+      return String(bucket?.type || '').startsWith('general.stopwatch');
+    },
+    bucketIdentity(bucket) {
+      return getBucketIdentity(bucket);
+    },
+    buildDailyTimelineBucket(bucket) {
+      const events = [];
+
+      for (const event of bucket.events || []) {
+        const identity = this.eventIdentity(bucket, event);
+        if (!this.matchesIdentity(identity)) {
+          continue;
+        }
+
+        const interval = this.clipEventInterval(event);
+        if (!interval) {
+          continue;
+        }
+
+        events.push({
+          ...event,
+          timestamp: interval.start.format(),
+          duration: interval.end.diff(interval.start, 'seconds', true),
+        });
+      }
+
+      return {
+        ...bucket,
+        display_name: this.buildDailyTimelineBucketLabel(bucket),
+        events,
+      };
+    },
+    buildDailyTimelineBucketLabel(bucket) {
+      const identity = this.bucketIdentity(bucket);
+      const parts = [identity.watcherLabel];
+      parts.push(
+        `${this.$tr('Session')} ${identity.sessionId}${
+          identity.sessionType ? ` (${identity.sessionType})` : ''
+        }`
+      );
+
+      if (this.selectedDeviceIds.length !== 1) {
+        parts.push(identity.deviceName);
+      }
+
+      return parts.join(' | ');
+    },
+    selectAllDailyWatchers() {
+      this.selectedDailyWatcherKeys = this.dailyWatcherOptions.map(option => option.value);
+    },
+    clearDailyWatchers() {
+      this.selectedDailyWatcherKeys = [];
+    },
+    syncDailyTimelineWatchers() {
+      const available = this.dailyWatcherOptions.map(option => option.value);
+
+      if (available.length === 0) {
+        if (this.selectedDailyWatcherKeys.length > 0) {
+          this.selectedDailyWatcherKeys = [];
+        }
+        return;
+      }
+
+      const filteredSelection = this.selectedDailyWatcherKeys.filter(value =>
+        available.includes(value)
+      );
+
+      if (this.selectedDailyWatcherKeys.length === 0 || filteredSelection.length === 0) {
+        this.selectedDailyWatcherKeys = [...available];
+        return;
+      }
+
+      if (!_.isEqual(filteredSelection, this.selectedDailyWatcherKeys)) {
+        this.selectedDailyWatcherKeys = filteredSelection;
+      }
     },
     buildActiveWindowEvents(buckets) {
       const browserEvents = this.buildBrowserEvents(buckets);
@@ -1728,6 +1960,10 @@ export default {
   min-height: 32rem;
 }
 
+.fleet-summary-panel--daily-watchers {
+  min-height: 24rem;
+}
+
 .fleet-summary-filters {
   padding: 0.75rem;
   border: 1px solid rgba(127, 127, 127, 0.2);
@@ -1787,6 +2023,36 @@ export default {
 
 .fleet-chart {
   height: 28rem;
+}
+
+.fleet-daily-timeline-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.fleet-daily-swimlane {
+  display: flex;
+  align-items: center;
+
+  select {
+    width: 10.5rem;
+  }
+}
+
+.fleet-daily-watcher-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.35rem 0.75rem;
+  max-height: 10rem;
+  overflow: auto;
+  padding: 0.6rem;
+  border: 1px solid rgba(127, 127, 127, 0.22);
+  border-radius: 0.45rem;
+  background: rgba(127, 127, 127, 0.08);
 }
 
 .fleet-summary-empty {
