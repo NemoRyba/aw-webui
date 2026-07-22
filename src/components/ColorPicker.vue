@@ -1,28 +1,53 @@
 <template lang="pug">
-div
-  b-input-group(ref="colorpicker")
+div.color-picker(ref="colorpicker")
+  b-input-group
+    b-input-group-prepend
+      b-form-input.color-native-input(
+        type="color"
+        :value="hexColor"
+        @input="updateFromNative"
+        @focus="showPicker()"
+        title="Pick color"
+      )
     b-form-input(
-      v-model="colorValue"
+      v-model.trim="colorValue"
       @focus="showPicker()"
       @input="updateFromInput"
+      :state="inputState"
       placeholder="#FF00FF"
     )
     b-input-group-append
-      b-button.px-2(variant="outline-secondary" style="border-color: #AAA; border-left: 0; border-right: 0" @click="togglePicker()")
-        div.current-color(:style="'background-color: ' + colorValue")
-      b-btn.px-1(variant="outline-secondary", style="border-color: #AAA", @click="randomColor()" title="Randomize")
+      b-button.px-2(variant="outline-secondary" @click="togglePicker()" title="Open color picker")
+        div.current-color(:style="'background-color: ' + hexColor")
+      b-btn.px-1(variant="outline-secondary", @click="randomColor()" title="Randomize")
         icon(name="sync" scale="1")
 
-  div(style="position: relative")
-    picker(:value="colors" @input="updateFromPicker" v-if="displayPicker")
+  div.color-picker-popover(v-if="displayPicker")
+    picker(:value="colors" @input="updateFromPicker" :disable-alpha="true")
 </template>
 
 <style>
-.vc-chrome {
-  position: absolute;
-  top: 0px;
-  z-index: 9;
+.color-picker {
+  position: relative;
 }
+
+.color-native-input {
+  width: 3rem;
+  min-width: 3rem;
+  padding: 0.15rem;
+}
+
+.color-picker-popover {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 1051;
+}
+
+.color-picker-popover .vc-chrome {
+  box-shadow: 0 0.35rem 1rem rgba(0, 0, 0, 0.24);
+}
+
 .current-color {
   border-radius: 1em;
   height: 1.5em;
@@ -33,14 +58,28 @@ div
 </style>
 
 <script lang="ts">
-// Based on https://codepen.io/Brownsugar/pen/NaGPKy
 import 'vue-awesome/icons/sync';
 
-import { Compact } from 'vue-color';
+import { Chrome } from 'vue-color';
+
+const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+function normalizeHexColor(color) {
+  const value = String(color || '').trim();
+  if (!HEX_COLOR.test(value)) {
+    return null;
+  }
+
+  if (value.length === 4) {
+    return `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`.toUpperCase();
+  }
+
+  return value.toUpperCase();
+}
 
 export default {
   components: {
-    picker: Compact,
+    picker: Chrome,
   },
   props: { value: { type: String, default: '#000000' } },
   data() {
@@ -52,12 +91,24 @@ export default {
       displayPicker: false,
     };
   },
+  computed: {
+    hexColor() {
+      return normalizeHexColor(this.colorValue) || '#000000';
+    },
+    inputState() {
+      return normalizeHexColor(this.colorValue) ? null : false;
+    },
+  },
   watch: {
     colorValue(val) {
-      if (val) {
-        this.updateColors(val);
-        this.$emit('input', val);
+      const normalized = normalizeHexColor(val);
+      if (normalized) {
+        this.updateColors(normalized);
+        this.$emit('input', normalized);
       }
+    },
+    value(val) {
+      this.setColor(val);
     },
   },
   mounted() {
@@ -65,24 +116,15 @@ export default {
   },
   methods: {
     setColor(color) {
-      this.updateColors(color);
-      this.colorValue = color;
+      const normalized = normalizeHexColor(color) || '#000000';
+      this.updateColors(normalized);
+      this.colorValue = normalized;
     },
     updateColors(color) {
-      if (color.slice(0, 1) == '#') {
+      const normalized = normalizeHexColor(color);
+      if (normalized) {
         this.colors = {
-          hex: color,
-        };
-      } else if (color.slice(0, 4) == 'rgba') {
-        const rgba = color.replace(/^rgba?\(|\s+|\)$/g, '').split(',');
-        const hex =
-          '#' +
-          ((1 << 24) + (parseInt(rgba[0]) << 16) + (parseInt(rgba[1]) << 8) + parseInt(rgba[2]))
-            .toString(16)
-            .slice(1);
-        this.colors = {
-          hex: hex,
-          a: rgba[3],
+          hex: normalized,
         };
       }
     },
@@ -97,19 +139,24 @@ export default {
     togglePicker() {
       this.displayPicker ? this.hidePicker() : this.showPicker();
     },
+    updateFromNative(event) {
+      this.colorValue = normalizeHexColor(event?.target?.value) || this.hexColor;
+    },
     updateFromInput() {
-      this.updateColors(this.colorValue);
+      const normalized = normalizeHexColor(this.colorValue);
+      if (normalized) {
+        this.updateColors(normalized);
+      }
     },
     updateFromPicker(color) {
       this.colors = color;
-      if (color.rgba.a == 1) {
-        this.colorValue = color.hex;
-      } else {
-        this.colorValue = `rgba(${color.rgba.r}, ${color.rgba.g}, ${color.rgba.b}, ${color.rgba.a})`;
-      }
+      this.colorValue = normalizeHexColor(color.hex) || this.hexColor;
     },
     randomColor() {
-      this.colorValue = '#' + (0x1000000 + Math.random() * 0xffffff).toString(16).substr(1, 6);
+      this.colorValue = `#${Math.floor(Math.random() * 0xffffff)
+        .toString(16)
+        .padStart(6, '0')
+        .toUpperCase()}`;
     },
     documentClick(e) {
       const el = this.$refs.colorpicker;
