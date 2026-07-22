@@ -1,5 +1,5 @@
 <template lang="pug">
-div.fleet-activity-summary.mb-3
+div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': activeTheme === 'dark' }")
   div.d-flex.align-items-center.mb-3
     div
       h5.mb-0 {{ $tr('Summary') }}
@@ -54,6 +54,14 @@ div.fleet-activity-summary.mb-3
     | {{ $tr('No activity summary data matches the current filters.') }}
 
   div.row(v-else)
+    div.col-12.mb-3
+      div.fleet-session-summary-strip
+        div
+          div.text-muted.small {{ $tr('Active session time') }}
+          div.fleet-session-summary-value {{ activeSessionDurationLabel }}
+        div.fleet-session-summary-help.text-muted.small
+          | {{ $tr('Overlapping active sessions across selected devices are counted once.') }}
+
     div.col-12.mb-3
       div.fleet-summary-panel.fleet-summary-panel--timeline
         div.fleet-panel-header.mb-3
@@ -805,6 +813,9 @@ export default {
         labels: this.timelineBins.map(bin => bin.label),
         datasets: this.timelineDatasets,
       };
+    },
+    activeSessionDurationLabel() {
+      return seconds_to_duration(Number(this.user?.totals?.active_seconds || 0));
     },
     dailyTimelineInterval() {
       if (!this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
@@ -2609,6 +2620,29 @@ export default {
   overflow: hidden;
 }
 
+.fleet-session-summary-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(127, 127, 127, 0.2);
+  border-radius: 0.45rem;
+  background: #fbfcfe;
+}
+
+.fleet-session-summary-value {
+  color: #132033;
+  font-size: 1.45rem;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.fleet-session-summary-help {
+  max-width: 34rem;
+  text-align: right;
+}
+
 .fleet-timeline-chart {
   display: flex;
   align-items: stretch;
@@ -2750,5 +2784,27 @@ export default {
 
 .fleet-chart-tooltip--dark .fleet-chart-tooltip-line--item {
   color: #eef1f6;
+}
+
+.fleet-activity-summary--dark .fleet-session-summary-strip,
+.fleet-activity-summary--dark .fleet-summary-panel,
+.fleet-activity-summary--dark .fleet-summary-filters {
+  border-color: rgba(233, 235, 240, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.fleet-activity-summary--dark .fleet-session-summary-value {
+  color: #eef1f6;
+}
+
+@media (max-width: 575.98px) {
+  .fleet-session-summary-strip {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .fleet-session-summary-help {
+    text-align: left;
+  }
 }
 </style>

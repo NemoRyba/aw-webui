@@ -58,6 +58,9 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Next day': 'Nächster Tag',
     Active: 'Aktiv',
     'Active time': 'Aktivzeit',
+    'Active session time': 'Aktive Sitzungszeit',
+    'Overlapping active sessions across selected devices are counted once.':
+      'Überlappende aktive Sitzungen auf ausgewählten Geräten werden einmal gezählt.',
     'Total time': 'Gesamtzeit',
     AFK: 'AFK',
     'AFK time': 'AFK-Zeit',
