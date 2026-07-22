@@ -115,6 +115,13 @@ div.fleet-activity-summary.mb-3
               | {{ $tr('All') }}
             b-button(size="sm" variant="outline-secondary" @click="clearDailyWatchers" :disabled="dailyWatcherOptions.length === 0")
               | {{ $tr('None') }}
+        fleet-system-metrics-wave.mb-3(
+          :device-ids="selectedDeviceIds"
+          :start="rangeStartIso"
+          :end="rangeEndIso"
+          :max-points="420"
+          compact
+        )
         div.small.text-muted.mb-2(v-if="dailyWatcherOptions.length === 0")
           | {{ $tr('No watchers available for the current selection.') }}
         div.fleet-daily-watcher-controls.mb-3(v-else)
@@ -374,7 +381,10 @@ function pickSubnameAsName(category) {
 
 export default {
   name: 'FleetActivitySummary',
-  components: { Bar },
+  components: {
+    Bar,
+    'fleet-system-metrics-wave': () => import('~/components/FleetSystemMetricsWave.vue'),
+  },
   props: {
     user: { type: Object, required: true },
   },
@@ -434,6 +444,12 @@ export default {
     },
     rangeEnd() {
       return moment(this.user?.range?.end);
+    },
+    rangeStartIso() {
+      return this.rangeStart.isValid() ? this.rangeStart.format() : '';
+    },
+    rangeEndIso() {
+      return this.rangeEnd.isValid() ? this.rangeEnd.format() : '';
     },
     rangeLabel() {
       if (!this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
@@ -1456,7 +1472,8 @@ export default {
       return true;
     },
     isHiddenTimelineBucket(bucket) {
-      return String(bucket?.type || '').startsWith('general.stopwatch');
+      const bucketType = String(bucket?.type || '');
+      return bucketType.startsWith('general.stopwatch') || bucketType === 'systemmetrics';
     },
     bucketIdentity(bucket) {
       return getBucketIdentity(bucket);

@@ -24,6 +24,15 @@ div
   b-alert(show variant="info" v-if="!device")
     | {{ $tr('No data found for this device.') }}
 
+  b-card.mb-3(v-if="device")
+    h5.mb-3 {{ $tr('System load') }}
+    fleet-system-metrics-wave(
+      :device-ids="[device_id]"
+      :start="rangeStart"
+      :end="rangeEnd"
+      :max-points="480"
+    )
+
   div.row(v-if="device")
     div.col-md-3.mb-3
       b-card
@@ -102,6 +111,7 @@ export default {
   components: {
     'column-order-editor': () => import('~/components/ColumnOrderEditor.vue'),
     'fleet-nav': () => import('~/components/FleetNav.vue'),
+    'fleet-system-metrics-wave': () => import('~/components/FleetSystemMetricsWave.vue'),
   },
   props: {
     device_id: String,
@@ -152,6 +162,12 @@ export default {
     device() {
       return this.fleetStore.deviceDetails[this.device_id] || null;
     },
+    rangeStart() {
+      return moment(this.startDate).startOf('day').format();
+    },
+    rangeEnd() {
+      return moment(this.endDate).endOf('day').format();
+    },
   },
   watch: {
     device_id: async function () {
@@ -164,8 +180,8 @@ export default {
   methods: {
     buildParams() {
       return {
-        start: moment(this.startDate).startOf('day').toISOString(),
-        end: moment(this.endDate).endOf('day').toISOString(),
+        start: this.rangeStart,
+        end: this.rangeEnd,
         exclude_inactive_session_afk: 'true',
       };
     },
