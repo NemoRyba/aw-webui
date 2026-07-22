@@ -9,6 +9,10 @@ export function buildTooltip(bucket, e) {
   // WARNING: XSS risk, make sure to sanitize properly
   // FIXME: Not actually tested against XSS attacks, implementation needs to be verified in tests.
   let inner = 'Unknown bucket type';
+  const watcherLabel = bucket.display_name || bucket.client || bucket.id || '';
+  const watcherRow = watcherLabel
+    ? `<tr><th>Watcher</th><td>${sanitize(watcherLabel)}</td></tr>`
+    : '';
 
   // if same day, don't show date
   let start = moment(e.timestamp);
@@ -51,6 +55,7 @@ export function buildTooltip(bucket, e) {
     <tr><th>Start</th><td>${start}</td></tr>
     <tr><th>Stop</th><td>${stop}</td></tr>
     <tr><th>Duration&nbsp;</th><td>${seconds_to_duration(e.duration)}</td></tr>
+    ${watcherRow}
     ${inner}
     </table>`;
 }

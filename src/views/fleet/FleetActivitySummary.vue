@@ -129,7 +129,7 @@ div.fleet-activity-summary.mb-3
           v-if="selectedDailyTimelineBuckets.length > 0"
           :key="dailyTimelineKey"
           :buckets="selectedDailyTimelineBuckets"
-          :showRowLabels="true"
+          :showRowLabels="false"
           :queriedInterval="dailyTimelineInterval"
           :windowInterval="dailyTimelineInterval"
           :swimlane="dailyTimelineSwimlane"
