@@ -7,6 +7,22 @@
       div.timeline-details__empty.small.text-muted(v-if="!detailHtml")
         | {{ $tr('Hover over a timeline item to inspect its details here.') }}
       div.timeline-details__content(v-else v-html="detailHtml")
+      div.timeline-details__state-color(v-if="detailColorTarget")
+        label.timeline-details__state-color-label
+          span {{ $tr('State color') }}
+          small.text-muted.ml-2 {{ detailColorTarget.label }}
+        div.timeline-details__state-color-controls
+          input.timeline-details__state-color-input(
+            type="color"
+            :value="detailColorTarget.color"
+            :aria-label="$tr('State color')"
+            @input="updateTimelineStateColor($event.target.value)"
+          )
+          code {{ detailColorTarget.color }}
+          b-button(size="sm" variant="outline-secondary" @click="resetTimelineStateColor")
+            | {{ $tr('Reset color') }}
+        div.small.text-muted.mt-1
+          | {{ $tr('Color applies to all matching timeline bars.') }}
 
     div.small.text-muted.my-2(v-if="bucketsFromEither.length != 1")
       i Buckets with no events in the queried range will be hidden.
@@ -78,6 +94,31 @@ div#visualization {
     word-break: break-all;
   }
 }
+
+.timeline-details__state-color {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(127, 127, 127, 0.25);
+}
+
+.timeline-details__state-color-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-weight: 600;
+}
+
+.timeline-details__state-color-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.timeline-details__state-color-input {
+  width: 2.75rem;
+  height: 2rem;
+  padding: 0.1rem;
+}
 </style>
 
 <script lang="ts">
@@ -89,6 +130,7 @@ import { getCategoryColorFromEvent, getTitleAttr } from '../util/color';
 import { getSwimlane } from '../util/swimlane.js';
 import { IEvent } from '../util/interfaces';
 import { translateCurrent } from '~/i18n';
+import { useSettingsStore } from '~/stores/settings';
 
 import { Timeline } from 'vis-timeline/esnext';
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
@@ -103,6 +145,7 @@ interface IChartDataItem {
   start: Date;
   end: Date;
   color: string;
+  colorTarget?: Record<string, any> | null;
   event: IEvent;
   swimlane: string;
 }
@@ -119,6 +162,7 @@ interface ITimelineItem {
   bucketId?: string;
   event?: IEvent | null;
   editable?: boolean;
+  colorTarget?: Record<string, any> | null;
 }
 export default {
   components: {
@@ -137,6 +181,7 @@ export default {
   data() {
     return {
       timeline: null,
+      settingsStore: useSettingsStore(),
       filterShortEvents: true,
       items: [],
       groups: [],
@@ -177,6 +222,20 @@ export default {
         return [];
       }
     },
+    timelineStateColorSignature() {
+      return JSON.stringify(this.settingsStore.timelineStateColorsData || {});
+    },
+    detailColorTarget() {
+      const item = _.find(this.items, i => String(i.id) === String(this.detailItemId));
+      const target = item?.colorTarget;
+      if (!target?.key) {
+        return null;
+      }
+      return {
+        ...target,
+        color: this.timelineStateColorValue(target.key, target.defaultColor),
+      };
+    },
     chartData(): IChartDataItem[] {
       const data: IChartDataItem[] = [];
       _.each(this.bucketsFromEither, bucket => {
@@ -192,13 +251,15 @@ export default {
         }
         events.sort((a, b) => a.timestamp.valueOf() - b.timestamp.valueOf());
         _.each(events, e => {
+          const colorTarget = this.timelineColorTarget(bucket, e);
           data.push({
             bucketId: bucket.id,
             title: getTitleAttr(bucket, e),
             tooltip: buildTooltip(bucket, e),
             start: new Date(e.timestamp),
             end: new Date(moment(e.timestamp).add(e.duration, 'seconds').valueOf()),
-            color: getCategoryColorFromEvent(bucket, e),
+            color: this.timelineColorForEvent(bucket, e, colorTarget),
+            colorTarget,
             event: e,
             swimlane: getSwimlane(bucket, e.color, this.swimlane, e),
           });
@@ -226,6 +287,9 @@ export default {
     },
     windowInterval() {
       this.applyTimelineWindow();
+    },
+    timelineStateColorSignature() {
+      this.update();
     },
   },
   mounted() {
@@ -264,6 +328,74 @@ export default {
     },
     openEditor: function () {
       this.$bvModal.show('edit-modal-' + this.editingEvent.id);
+    },
+    timelineColorTarget(bucket, event) {
+      const bucketType = String(bucket?.type || '');
+      if (bucketType !== 'sessionstate' && !bucketType.startsWith('audio.')) {
+        return null;
+      }
+
+      const state = String(event?.data?.state || '').trim();
+      if (!state) {
+        return null;
+      }
+
+      const defaultColor = getCategoryColorFromEvent(bucket, event);
+      return {
+        key: `${bucketType}:${state}`,
+        label: `${bucketType} · ${state}`,
+        defaultColor,
+      };
+    },
+    timelineColorForEvent(bucket, event, colorTarget = null) {
+      const fallback = getCategoryColorFromEvent(bucket, event);
+      const target = colorTarget || this.timelineColorTarget(bucket, event);
+      if (!target?.key) {
+        return fallback;
+      }
+      return this.timelineStateColorValue(target.key, fallback);
+    },
+    timelineStateColorValue(key, fallback) {
+      const value = (this.settingsStore.timelineStateColorsData || {})[key];
+      try {
+        return value ? Color(value).hex() : Color(fallback).hex();
+      } catch (_error) {
+        return '#cccccc';
+      }
+    },
+    async updateTimelineStateColor(color) {
+      const target = this.detailColorTarget;
+      if (!target?.key) {
+        return;
+      }
+      let normalized = color;
+      try {
+        normalized = Color(color).hex();
+      } catch (_error) {
+        return;
+      }
+      await this.settingsStore.update({
+        timelineStateColorsData: {
+          ...(this.settingsStore.timelineStateColorsData || {}),
+          [target.key]: normalized,
+        },
+      });
+    },
+    async resetTimelineStateColor() {
+      const target = this.detailColorTarget;
+      if (!target?.key) {
+        return;
+      }
+      const colors = { ...(this.settingsStore.timelineStateColorsData || {}) };
+      delete colors[target.key];
+      await this.settingsStore.update({ timelineStateColorsData: colors });
+    },
+    timelineItemBorderColor(bgColor) {
+      try {
+        return Color(bgColor).darken(0.3);
+      } catch (_error) {
+        return Color('#cccccc').darken(0.3);
+      }
     },
     onSelect: async function (properties) {
       if (properties.items.length == 0) {
@@ -335,7 +467,7 @@ export default {
       // Build items
       const items: ITimelineItem[] = _.map(this.chartData, (item, i) => {
         const bgColor = item.color;
-        const borderColor = Color(bgColor).darken(0.3);
+        const borderColor = this.timelineItemBorderColor(bgColor);
         return {
           id: String(i),
           group: item.bucketId,
@@ -347,7 +479,8 @@ export default {
           detailHtml: item.tooltip,
           bucketId: item.bucketId,
           event: item.event,
-          editable: true,
+          editable: !item.colorTarget,
+          colorTarget: item.colorTarget,
         };
       });
 

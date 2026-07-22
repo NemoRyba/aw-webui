@@ -49,6 +49,7 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     Start: 'Start',
     End: 'Ende',
     'Apply range': 'Zeitraum anwenden',
+    'Previous day': 'Vorheriger Tag',
     Active: 'Aktiv',
     'Active time': 'Aktivzeit',
     'Total time': 'Gesamtzeit',
@@ -78,9 +79,14 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Timeline details': 'Zeitachsen-Details',
     'Hover over a timeline item to inspect its details here.':
       'Fahre mit der Maus über ein Zeitachsen-Element, um hier dessen Details zu sehen.',
+    'State color': 'Statusfarbe',
+    'Reset color': 'Farbe zurücksetzen',
+    'Color applies to all matching timeline bars.':
+      'Die Farbe gilt für alle passenden Zeitachsen-Balken.',
     'Refresh this panel': 'Dieses Panel aktualisieren',
     Watcher: 'Watcher',
     Watchers: 'Watcher',
+    'Unknown start': 'Unbekannter Start',
     Swimlanes: 'Swimlanes',
     'No watchers available for the current selection.':
       'Für die aktuelle Auswahl sind keine Watcher verfügbar.',
@@ -95,9 +101,6 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Filter app, title, URL, device...': 'App, Titel, URL, Gerät filtern...',
     'Show AFK time': 'AFK-Zeit anzeigen',
     'Subtract AFK time': 'AFK-Zeit abziehen',
-    'Only count AFK while session is active': 'AFK nur bei aktiver Sitzung zählen',
-    'AFK during locked, disconnected, logged-in-only, or unavailable sessions is excluded from the AFK totals.':
-      'AFK während gesperrter, getrennter, nur angemeldeter oder nicht verfügbarer Sitzungen wird aus den AFK-Summen ausgeschlossen.',
     'Show percent': 'Prozent anzeigen',
     'Events counted: {count}': 'Gezählte Ereignisse: {count}',
     'No data': 'Keine Daten',
@@ -125,6 +128,9 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     logged_in: 'angemeldet',
     logged_off: 'abgemeldet',
     no_session: 'keine Sitzung',
+    silent: 'still',
+    no_device: 'kein Gerät',
+    error: 'Fehler',
     unknown: 'unbekannt',
     'not-afk': 'aktiv',
     'No activity reports available': 'Keine Aktivitätsberichte verfügbar',
@@ -191,6 +197,7 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'No data found for this user.': 'Keine Daten für diesen Benutzer gefunden.',
     'No data found for this device.': 'Keine Daten für dieses Gerät gefunden.',
     'Daily watcher timeline': 'Tägliche Watcher-Zeitachse',
+    'Watcher timeline': 'Watcher-Zeitachse',
     'Events shown: {count}': 'Angezeigte Ereignisse: {count}',
     'No app data found in the selected range': 'Keine App-Daten im gewählten Zeitraum gefunden',
     'No live sessions for this user': 'Keine Live-Sitzungen für diesen Benutzer',
@@ -512,8 +519,6 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Subtract AFK time by default': 'AFK-Zeit standardmäßig abziehen',
     'Count audible browser tab as active by default':
       'Hörbaren Browser-Tab standardmäßig als aktiv zählen',
-    'Only count AFK while session is active by default':
-      'AFK nur bei aktiver Sitzung standardmäßig zählen',
     Enabled: 'Aktiviert',
     Disabled: 'Deaktiviert',
     'Use fallback colors': 'Fallback-Farben verwenden',

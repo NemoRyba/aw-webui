@@ -76,7 +76,7 @@ div.fleet-activity-summary.mb-3
               class="fleet-y-axis-tick"
               :style="{ top: tick.top }"
             ) {{ tick.label }}
-          div.fleet-chart-scroll
+          div.fleet-chart-scroll(ref="timelineChartScroll" @scroll="handleTimelineChartScroll")
             div.fleet-chart(:style="{ minWidth: timelineChartMinWidth }")
               bar(
                 :key="'timeline-chart-' + panelRefreshKeys.timeline"
@@ -87,11 +87,11 @@ div.fleet-activity-summary.mb-3
               )
         div.fleet-summary-empty(v-else) {{ $tr('No data') }}
 
-    div.col-12.mb-3(v-if="isSingleDayRange")
+    div.col-12.mb-3(v-if="showDetailedWatcherTimeline")
       div.fleet-summary-panel.fleet-summary-panel--daily-watchers
         div.d-flex.flex-wrap.align-items-center.justify-content-between.mb-2
           div
-            h6.mb-1 {{ $tr('Daily watcher timeline') }}
+            h6.mb-1 {{ $tr('Watcher timeline') }}
             div.small.text-muted
               | {{ $tr('Events shown: {count}', { count: dailyTimelineEventCount }) }}
           div.fleet-daily-timeline-tools
@@ -403,6 +403,10 @@ export default {
       },
       timelineTooltipHovered: false,
       timelineTooltipHideTimer: null,
+      timelineAutoScrollTimer: null,
+      timelineAutoScrollPending: false,
+      timelineAutoScrollAttempts: 0,
+      timelineProgrammaticScroll: false,
       loadRequestId: 0,
       panelRefreshKeys: {
         timeline: 0,
@@ -444,6 +448,12 @@ export default {
         return false;
       }
       return this.rangeEnd.diff(this.rangeStart, 'hours', true) <= 24.5;
+    },
+    showDetailedWatcherTimeline() {
+      if (!this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
+        return false;
+      }
+      return this.rangeEnd.diff(this.rangeStart, 'hours', true) <= 72.5;
     },
     selectedDeviceIds() {
       if (this.user?.selected_devices && this.user.selected_devices.length > 0) {
@@ -616,6 +626,7 @@ export default {
         categories: new Map(),
         devices: new Map(),
         deviceEntries: new Map(),
+        eventEntries: [],
       });
       const ensureDetail = (dataset, index) => {
         if (!dataset.details[index]) {
@@ -695,6 +706,9 @@ export default {
               this.timelineDeviceEntryLabel(eventDevice, eventApp, eventTitle),
               seconds
             );
+            detail.eventEntries.push(
+              this.timelineEventEntry(eventStart, eventDevice, eventApp, eventTitle, seconds)
+            );
           }
         });
       }
@@ -750,6 +764,19 @@ export default {
     timelineAfkData() {
       return this.timelineSeries.afkData;
     },
+    timelineBinTotals() {
+      const totals = Array.from({ length: this.timelineBins.length }, () => 0);
+      (this.timelineDatasets || []).forEach((dataset: any) => {
+        const values = Array.isArray(dataset.data) ? dataset.data : [];
+        values.forEach((value, index) => {
+          totals[index] += Number(value || 0);
+        });
+      });
+      return totals.map(value => Math.round(value * 1000) / 1000);
+    },
+    timelineBinTotalsSignature() {
+      return this.timelineBinTotals.join('|');
+    },
     timelineChartPlugins() {
       return [
         this.timelineAfkOverlayPlugin,
@@ -800,7 +827,7 @@ export default {
       return this.dailyWatcherOptions.map(option => option.value).join('|');
     },
     dailyTimelineBuckets() {
-      if (!this.isSingleDayRange || !this.dailyTimelineInterval) {
+      if (!this.showDetailedWatcherTimeline || !this.dailyTimelineInterval) {
         return [];
       }
 
@@ -1146,13 +1173,139 @@ export default {
     dailyWatcherSignature() {
       this.syncDailyTimelineWatchers();
     },
+    timelineBinTotalsSignature() {
+      if (this.timelineAutoScrollPending) {
+        this.scheduleTimelineAutoScroll();
+      }
+    },
   },
   beforeDestroy() {
     this.clearTimelineTooltipHideTimer();
+    this.clearTimelineAutoScrollTimer();
   },
   methods: {
     noop() {
       return undefined;
+    },
+    requestTimelineAutoScroll() {
+      this.timelineAutoScrollPending = true;
+      this.timelineAutoScrollAttempts = 0;
+      this.scheduleTimelineAutoScroll();
+    },
+    scheduleTimelineAutoScroll(delay = 0) {
+      this.clearTimelineAutoScrollTimer();
+      this.timelineAutoScrollTimer = window.setTimeout(() => {
+        this.timelineAutoScrollTimer = null;
+        this.$nextTick(() => {
+          const runAutoScroll = () => this.autoScrollTimelineChart();
+          if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+            window.requestAnimationFrame(runAutoScroll);
+          } else {
+            runAutoScroll();
+          }
+        });
+      }, delay);
+    },
+    clearTimelineAutoScrollTimer() {
+      if (this.timelineAutoScrollTimer) {
+        window.clearTimeout(this.timelineAutoScrollTimer);
+        this.timelineAutoScrollTimer = null;
+      }
+    },
+    handleTimelineChartScroll() {
+      if (this.timelineProgrammaticScroll) {
+        return;
+      }
+      if (this.timelineAutoScrollPending) {
+        this.timelineAutoScrollPending = false;
+        this.clearTimelineAutoScrollTimer();
+      }
+    },
+    autoScrollTimelineChart() {
+      const scrollEl = this.$refs.timelineChartScroll as HTMLElement;
+      if (!this.timelineAutoScrollPending) {
+        return;
+      }
+      const totals = this.timelineBinTotals || [];
+      if (!scrollEl || totals.length === 0 || _.sum(totals) <= 0) {
+        this.retryTimelineAutoScroll();
+        return;
+      }
+
+      const maxScroll = scrollEl.scrollWidth - scrollEl.clientWidth;
+      if (maxScroll <= 1) {
+        this.timelineAutoScrollPending = false;
+        scrollEl.scrollLeft = 0;
+        return;
+      }
+
+      const focusIndex = this.timelineActivityFocusIndex(scrollEl);
+      if (!Number.isFinite(focusIndex) || focusIndex < 0) {
+        this.timelineAutoScrollPending = false;
+        return;
+      }
+
+      const pxPerBin = scrollEl.scrollWidth / Math.max(1, this.timelineBinTotals.length);
+      const targetCenter = (focusIndex + 0.5) * pxPerBin;
+      const nextScrollLeft = Math.max(
+        0,
+        Math.min(maxScroll, targetCenter - scrollEl.clientWidth / 2)
+      );
+      this.timelineProgrammaticScroll = true;
+      scrollEl.scrollLeft = nextScrollLeft;
+      this.timelineAutoScrollPending = false;
+      window.setTimeout(() => {
+        this.timelineProgrammaticScroll = false;
+      }, 0);
+    },
+    retryTimelineAutoScroll() {
+      if (!this.timelineAutoScrollPending) {
+        return;
+      }
+      this.timelineAutoScrollAttempts += 1;
+      if (this.timelineAutoScrollAttempts <= 12) {
+        this.scheduleTimelineAutoScroll(80);
+        return;
+      }
+      this.timelineAutoScrollPending = false;
+    },
+    timelineActivityFocusIndex(scrollEl) {
+      const values = (this.timelineBinTotals || []).map(value => Math.max(0, Number(value || 0)));
+      const total = _.sum(values);
+      if (values.length === 0 || total <= 0) {
+        return 0;
+      }
+
+      const pxPerBin = scrollEl.scrollWidth / Math.max(1, values.length);
+      const visibleBins = Math.max(1, Math.ceil(scrollEl.clientWidth / Math.max(1, pxPerBin)));
+      const windowBins = Math.min(values.length, visibleBins);
+      let bestStart = 0;
+      let bestScore = -1;
+      let rollingScore = 0;
+
+      values.forEach((value, index) => {
+        rollingScore += value;
+        if (index >= windowBins) {
+          rollingScore -= values[index - windowBins];
+        }
+        if (index >= windowBins - 1 && rollingScore > bestScore) {
+          bestScore = rollingScore;
+          bestStart = index - windowBins + 1;
+        }
+      });
+
+      let weightedIndexSum = 0;
+      let weightedDurationSum = 0;
+      for (let index = bestStart; index < bestStart + windowBins; index += 1) {
+        const value = values[index] || 0;
+        weightedIndexSum += index * value;
+        weightedDurationSum += value;
+      }
+
+      if (weightedDurationSum <= 0) {
+        return bestStart + (windowBins - 1) / 2;
+      }
+      return weightedIndexSum / weightedDurationSum;
     },
     async loadRawEvents(options: any = {}) {
       if (!this.user || !this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
@@ -1182,6 +1335,7 @@ export default {
         this.rawTimelineBuckets = buckets;
         this.activeWindowEvents = this.buildActiveWindowEvents(buckets);
         this.syncDailyTimelineWatchers();
+        this.requestTimelineAutoScroll();
         return true;
       } catch (error) {
         console.error('Unable to load fleet activity summary:', error);
@@ -1243,7 +1397,7 @@ export default {
     async loadSummaryBuckets() {
       await this.bucketsStore.ensureLoaded();
       const candidateBuckets = (this.bucketsStore.buckets || []).filter(bucket => {
-        if (this.isSingleDayRange) {
+        if (this.showDetailedWatcherTimeline) {
           return this.isDailyTimelineBucketCandidate(bucket);
         }
         return this.isSummaryBucketCandidate(bucket);
@@ -1804,6 +1958,27 @@ export default {
       }
       return `${deviceLabel} · ${appLabel} · ${title}`;
     },
+    timelineEventEntry(eventStart, deviceLabel, appLabel, titleLabel, duration) {
+      return {
+        label: `${this.formatTimelineEventStart(eventStart)} · ${this.timelineDeviceEntryLabel(
+          deviceLabel,
+          appLabel,
+          titleLabel
+        )}`,
+        duration: Math.round(Number(duration || 0)),
+        start: moment(eventStart).valueOf(),
+      };
+    },
+    formatTimelineEventStart(value) {
+      const start = moment(value);
+      if (!start.isValid()) {
+        return this.$tr('Unknown start');
+      }
+      if (this.isSingleDayRange || start.isSame(this.rangeStart, 'day')) {
+        return start.format('HH:mm:ss');
+      }
+      return start.format('MMM D HH:mm:ss');
+    },
     matchesIdentity(identity) {
       if (identity.username !== this.user.username) {
         return false;
@@ -1963,6 +2138,11 @@ export default {
         categories: includeCategories ? toSortedList(detail.categories) : [],
         devices: toSortedList(detail.devices),
         deviceEntries: toSortedList(detail.deviceEntries),
+        eventEntries: _.orderBy(
+          detail.eventEntries || [],
+          ['start', 'duration'],
+          ['asc', 'desc']
+        ).filter(item => item.duration > 0),
       };
     },
     formatTimelineTooltipDetail(detail, datasetLabel = '') {
@@ -1987,6 +2167,7 @@ export default {
         4,
         86
       );
+      this.addTimelineTooltipSection(lines, this.$tr('Events'), detail.eventEntries, 8, 96);
       this.addTimelineTooltipSection(lines, this.$tr('Top Applications'), detail.apps, 4);
       this.addTimelineTooltipSection(lines, this.$tr('Top Window Titles'), detail.titles, 4, 72);
 
@@ -2014,6 +2195,7 @@ export default {
         6,
         86
       );
+      this.addTimelineTooltipSection(lines, this.$tr('Events'), detail.eventEntries, 10, 96);
 
       return lines;
     },
@@ -2043,6 +2225,7 @@ export default {
         devices: new Map(),
         categories: new Map(),
         deviceEntries: new Map(),
+        eventEntries: [],
       };
 
       (datasets || []).forEach((dataset: any) => {
@@ -2060,6 +2243,7 @@ export default {
         );
         addEntries(merged.devices, detail.devices);
         addEntries(merged.deviceEntries, detail.deviceEntries);
+        merged.eventEntries.push(...(detail.eventEntries || []));
       });
 
       return {
@@ -2067,6 +2251,11 @@ export default {
         devices: toSortedList(merged.devices),
         categories: toSortedList(merged.categories),
         deviceEntries: toSortedList(merged.deviceEntries),
+        eventEntries: _.orderBy(
+          merged.eventEntries.filter(entry => Number(entry.duration || 0) > 0),
+          ['start', 'duration'],
+          ['asc', 'desc']
+        ),
       };
     },
     updateTimelineExternalTooltip(context) {

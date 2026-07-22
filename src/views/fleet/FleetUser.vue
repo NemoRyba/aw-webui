@@ -19,6 +19,15 @@ div
         | {{ $tr('Refresh') }}
 
   b-card.mb-3
+    div.fleet-user-range-shortcuts.mb-2
+      b-button(
+        size="sm"
+        variant="outline-secondary"
+        :title="$tr('Previous day')"
+        @click="shiftRangeDays(-1)"
+      )
+        icon(name="arrow-left")
+        span.ml-1 {{ $tr('Previous day') }}
     div.row
       div.col-md-4
         label.small.text-muted(for="fleet-user-start") {{ $tr('Start') }}
@@ -42,37 +51,10 @@ div
         :options="deviceOptions"
         stacked
       )
-    div.mt-3
-      b-form-checkbox(
-        v-model="excludeInactiveSessionAfk"
-        @change="refresh"
-      )
-        | {{ $tr('Only count AFK while session is active') }}
-      div.small.text-muted.ml-4
-        | {{ $tr('AFK during locked, disconnected, logged-in-only, or unavailable sessions is excluded from the AFK totals.') }}
-
   b-alert(show variant="info" v-if="!user")
     | {{ $tr('No data found for this user.') }}
 
   fleet-activity-summary(v-if="user" :user="user")
-
-  div.row(v-if="user")
-    div.col-md-3.mb-3
-      b-card
-        div.text-muted.small {{ $tr('Active') }}
-        h4.mb-0 {{ user.totals.active_seconds | friendlyduration }}
-    div.col-md-3.mb-3
-      b-card
-        div.text-muted.small {{ $tr('AFK') }}
-        h4.mb-0 {{ user.totals.afk_seconds | friendlyduration }}
-    div.col-md-3.mb-3
-      b-card
-        div.text-muted.small {{ $tr('Locked') }}
-        h4.mb-0 {{ user.totals.locked_seconds | friendlyduration }}
-    div.col-md-3.mb-3
-      b-card
-        div.text-muted.small {{ $tr('Disconnected') }}
-        h4.mb-0 {{ user.totals.disconnected_seconds | friendlyduration }}
 
   b-card.mb-3(v-if="user")
     div.d-flex.align-items-center.mb-3
@@ -126,6 +108,7 @@ div
 
 <script lang="ts">
 import moment from 'moment';
+import 'vue-awesome/icons/arrow-left';
 
 import { useSettingsStore } from '~/stores/settings';
 import { useFleetStore } from '~/stores/fleet';
@@ -238,14 +221,6 @@ export default {
       const selected = this.isAllDevicesSelected() ? total : this.selectedDeviceIds.length;
       return this.$tr('{selected} of {total} device(s) selected', { selected, total });
     },
-    excludeInactiveSessionAfk: {
-      get() {
-        return this.settingsStore.fleetSummaryExcludeInactiveSessionAfk;
-      },
-      set(value) {
-        this.settingsStore.update({ fleetSummaryExcludeInactiveSessionAfk: Boolean(value) });
-      },
-    },
   },
   watch: {
     username: async function () {
@@ -283,6 +258,17 @@ export default {
       }
       this.selectedDeviceIds = this.user.available_devices.map(device => device.device_id);
     },
+    async shiftRangeDays(days) {
+      const start = moment(this.startDate);
+      const end = moment(this.endDate);
+      if (!start.isValid() || !end.isValid()) {
+        return;
+      }
+
+      this.startDate = start.add(days, 'days').format('YYYY-MM-DD');
+      this.endDate = end.add(days, 'days').format('YYYY-MM-DD');
+      await this.refresh();
+    },
     buildParams() {
       const params: Record<string, string> = {
         start: moment(this.startDate).startOf('day').toISOString(),
@@ -291,7 +277,7 @@ export default {
       if (!this.isAllDevicesSelected()) {
         params.device_ids = this.selectedDeviceIds.join(',');
       }
-      params.exclude_inactive_session_afk = this.excludeInactiveSessionAfk ? 'true' : 'false';
+      params.exclude_inactive_session_afk = 'true';
       return params;
     },
     async refresh() {
@@ -339,6 +325,11 @@ export default {
 
 .fleet-user-select {
   width: min(18rem, 42vw);
+}
+
+.fleet-user-range-shortcuts {
+  display: flex;
+  justify-content: flex-end;
 }
 
 @media (max-width: 575.98px) {

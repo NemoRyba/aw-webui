@@ -42,8 +42,6 @@ div
         | {{ $tr('Subtract AFK time by default') }}
       b-form-checkbox(v-model="fleetSummaryCountAudibleBrowserTime" switch)
         | {{ $tr('Count audible browser tab as active by default') }}
-      b-form-checkbox(v-model="fleetSummaryExcludeInactiveSessionAfk" switch)
-        | {{ $tr('Only count AFK while session is active by default') }}
 
   div.my-4
     b-alert(variant="warning" :show="classes_unsaved_changes")
@@ -118,14 +116,6 @@ export default {
       },
       set(value) {
         this.settingsStore.update({ fleetSummaryIgnoreAudibleBrowserTime: !value });
-      },
-    },
-    fleetSummaryExcludeInactiveSessionAfk: {
-      get() {
-        return this.settingsStore.fleetSummaryExcludeInactiveSessionAfk;
-      },
-      set(value) {
-        this.settingsStore.update({ fleetSummaryExcludeInactiveSessionAfk: Boolean(value) });
       },
     },
   },

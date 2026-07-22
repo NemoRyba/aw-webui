@@ -35,6 +35,22 @@ export function buildTooltip(bucket, e) {
       <tr><th>Title</th><td>${sanitize(e.data.title)}</td></tr>
       <tr><th>URL</th><td><a href=${sanitize(e.data.url)}>${sanitize(e.data.url)}</a></td></tr>
       `;
+  } else if (bucket.type == 'sessionstate') {
+    inner = `
+      <tr><th>State</th><td>${sanitize(e.data.state)}</td></tr>
+      <tr><th>Reason</th><td>${sanitize(e.data.reason || '')}</td></tr>
+      <tr><th>Device</th><td>${sanitize(e.data.device_name || e.data.device_id || '')}</td></tr>
+      <tr><th>Session</th><td>${sanitize(e.data.session_id || '')}</td></tr>
+      `;
+  } else if (bucket.type.startsWith('audio.')) {
+    inner = `
+      <tr><th>State</th><td>${sanitize(e.data.state)}</td></tr>
+      <tr><th>Stream</th><td>${sanitize(e.data.stream || '')}</td></tr>
+      <tr><th>Active roles</th><td>${sanitize((e.data.active_roles || []).join(', '))}</td></tr>
+      <tr><th>Device count</th><td>${sanitize(String(e.data.device_count || 0))}</td></tr>
+      <tr><th>Device</th><td>${sanitize(e.data.device_name || e.data.device_id || '')}</td></tr>
+      <tr><th>Session</th><td>${sanitize(e.data.session_id || '')}</td></tr>
+      `;
   } else if (bucket.type.startsWith('app.editor')) {
     inner = `
       <tr><th>Filename</th><td>${sanitize(_.last(e.data.file.split('/')))}</td></tr>

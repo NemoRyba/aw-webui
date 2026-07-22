@@ -21,6 +21,15 @@ const customColors = {
   afk: '#EEE',
   'not-afk': '#7F6',
   hibernating: '#DD6',
+  active: '#75d86b',
+  locked: '#ffd166',
+  disconnected: '#adb5bd',
+  logged_in: '#74c0fc',
+  logged_off: '#868e96',
+  no_session: '#495057',
+  silent: '#868e96',
+  no_device: '#495057',
+  error: '#ff6b6b',
 
   'google-chrome': '#6AA7FE', // Google Blue: "#4885ed"
   chromium: '#8CF', // Google Blue: "#4885ed"
@@ -118,6 +127,10 @@ export function getTitleAttr(bucket: { type?: string }, e: IEvent) {
     return match ? match[1] : e.data.url;
   } else if (bucket.type == 'afkstatus') {
     return e.data.status;
+  } else if (bucket.type == 'sessionstate') {
+    return e.data.state;
+  } else if (bucket.type?.startsWith('audio.')) {
+    return e.data.state;
   } else if (bucket.type?.startsWith('app.editor')) {
     return _.last(e.data.file.split('/'));
   } else if (bucket.type?.startsWith('general.stopwatch')) {
@@ -136,6 +149,10 @@ export function getCategoryColorFromEvent(bucket: IBucket, e: IEvent) {
     return getCategoryColorFromString(e.data.title + '\n' + e.data.url);
   } else if (bucket.type == 'afkstatus') {
     return getColorFromString(e.data.status);
+  } else if (bucket.type == 'sessionstate') {
+    return getColorFromString(e.data.state);
+  } else if (bucket.type?.startsWith('audio.')) {
+    return getColorFromString(e.data.state);
   } else if (bucket.type?.startsWith('app.editor')) {
     return getCategoryColorFromString(e.data.file);
   } else if (bucket.type?.startsWith('general.stopwatch')) {
