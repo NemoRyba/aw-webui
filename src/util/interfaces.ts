@@ -91,6 +91,31 @@ export interface IFleetDeviceListItem {
   session_count: number;
 }
 
+export interface IFleetDeviceMetricSample {
+  timestamp: string;
+  cpu_percent?: number | null;
+  memory_percent?: number | null;
+  memory_used_bytes?: number | null;
+  memory_total_bytes?: number | null;
+}
+
+export interface IFleetDeviceMetricsItem {
+  device_id: string;
+  device_name: string;
+  last_updated?: string | null;
+  latest_cpu_percent?: number | null;
+  latest_memory_percent?: number | null;
+  latest_memory_used_bytes?: number | null;
+  latest_memory_total_bytes?: number | null;
+  samples: IFleetDeviceMetricSample[];
+}
+
+export interface IFleetDeviceMetricsResponse {
+  generated_at: string;
+  range: { start: string; end: string };
+  devices: IFleetDeviceMetricsItem[];
+}
+
 export interface IFleetTotals {
   active_seconds: number;
   afk_seconds: number;

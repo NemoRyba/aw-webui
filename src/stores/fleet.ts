@@ -5,6 +5,7 @@ import { getClient } from '~/util/awclient';
 import {
   IFleetDeviceDetail,
   IFleetDeviceListItem,
+  IFleetDeviceMetricsResponse,
   IFleetLiveResponse,
   IFleetStorageStatus,
   IFleetUserDetail,
@@ -35,6 +36,7 @@ interface State {
   storage: IFleetStorageStatus | null;
   users: IFleetUserListItem[];
   devices: IFleetDeviceListItem[];
+  deviceMetrics: IFleetDeviceMetricsResponse | null;
   userDetails: Record<string, IFleetUserDetail>;
   deviceDetails: Record<string, IFleetDeviceDetail>;
 }
@@ -45,6 +47,7 @@ export const useFleetStore = defineStore('fleet', {
     storage: null,
     users: [],
     devices: [],
+    deviceMetrics: null,
     userDetails: {},
     deviceDetails: {},
   }),
@@ -107,6 +110,15 @@ export const useFleetStore = defineStore('fleet', {
       const response = await getClient().req.get('/0/fleet/devices');
       this.$patch({ devices: response.data.devices || [] });
       return this.devices;
+    },
+
+    async loadDeviceMetrics(params = {}): Promise<IFleetDeviceMetricsResponse> {
+      const response = await getClient().req.get('/0/fleet/devices/metrics', {
+        params,
+      });
+      const metrics = response.data;
+      this.$patch({ deviceMetrics: metrics });
+      return metrics;
     },
 
     async loadDevice(deviceId: string, params = {}): Promise<IFleetDeviceDetail> {

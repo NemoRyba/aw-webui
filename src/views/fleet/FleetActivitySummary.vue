@@ -238,6 +238,21 @@ div.fleet-activity-summary.mb-3
           style="height: 20em"
         )
         div.fleet-summary-empty(v-else) {{ $tr('No data') }}
+
+  div.fleet-chart-tooltip(
+    v-show="timelineTooltip.visible"
+    :class="{ 'fleet-chart-tooltip--dark': activeTheme === 'dark' }"
+    :style="timelineTooltipStyle"
+    @mouseenter="holdTimelineTooltip"
+    @mouseleave="releaseTimelineTooltip"
+    @wheel.stop="noop"
+  )
+    div(
+      v-for="(line, index) in timelineTooltip.lines"
+      :key="index"
+      :class="['fleet-chart-tooltip-line', 'fleet-chart-tooltip-line--' + line.type]"
+    )
+      span(v-if="line.type !== 'spacer'") {{ line.text }}
 </template>
 
 <script lang="ts">
@@ -380,6 +395,14 @@ export default {
       selectedDailyWatcherKeys: [],
       dailyTimelineSwimlane: null,
       timelineChartArea: null,
+      timelineTooltip: {
+        visible: false,
+        x: 12,
+        y: 12,
+        lines: [],
+      },
+      timelineTooltipHovered: false,
+      timelineTooltipHideTimer: null,
       loadRequestId: 0,
       panelRefreshKeys: {
         timeline: 0,
@@ -906,6 +929,12 @@ export default {
     chartGridColor() {
       return this.activeTheme === 'dark' ? 'rgba(233, 235, 240, 0.18)' : 'rgba(0, 0, 0, 0.1)';
     },
+    timelineTooltipStyle() {
+      return {
+        left: `${this.timelineTooltip.x}px`,
+        top: `${this.timelineTooltip.y}px`,
+      };
+    },
     timelineChartOptions(): ChartOptions {
       const formatDuration = value => seconds_to_duration(Number(value || 0) * 3600);
       const afkData = this.timelineAfkData;
@@ -916,8 +945,12 @@ export default {
       const formatAxisTooltipDetail = this.formatTimelineAxisTooltipDetail.bind(this);
       const plugins: any = {
         tooltip: {
+          enabled: false,
           mode: 'point',
           intersect: false,
+          external: context => {
+            this.updateTimelineExternalTooltip(context);
+          },
           callbacks: {
             label(context) {
               const dataset: any = context.dataset;
@@ -1114,7 +1147,13 @@ export default {
       this.syncDailyTimelineWatchers();
     },
   },
+  beforeDestroy() {
+    this.clearTimelineTooltipHideTimer();
+  },
   methods: {
+    noop() {
+      return undefined;
+    },
     async loadRawEvents(options: any = {}) {
       if (!this.user || !this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
         return false;
@@ -2030,6 +2069,84 @@ export default {
         deviceEntries: toSortedList(merged.deviceEntries),
       };
     },
+    updateTimelineExternalTooltip(context) {
+      const chart = context?.chart;
+      const tooltip = context?.tooltip;
+      if (!chart || !tooltip || tooltip.opacity === 0) {
+        this.scheduleTimelineTooltipHide();
+        return;
+      }
+
+      const lines = this.timelineTooltipLines(tooltip);
+      if (lines.length === 0) {
+        this.scheduleTimelineTooltipHide();
+        return;
+      }
+
+      this.clearTimelineTooltipHideTimer();
+
+      const canvasRect = chart.canvas.getBoundingClientRect();
+      const viewportWidth = Number(window?.innerWidth || 1200);
+      const viewportHeight = Number(window?.innerHeight || 800);
+      const tooltipWidth = Math.min(672, Math.max(360, viewportWidth - 24));
+      const tooltipMaxHeight = Math.min(576, Math.max(260, viewportHeight - 24));
+      const preferredX = canvasRect.left + Number(tooltip.caretX || 0) + 16;
+      const preferredY = canvasRect.top + Number(tooltip.caretY || 0) + 16;
+
+      this.timelineTooltip = {
+        visible: true,
+        x: Math.max(12, Math.min(preferredX, viewportWidth - tooltipWidth - 12)),
+        y: Math.max(12, Math.min(preferredY, viewportHeight - tooltipMaxHeight - 12)),
+        lines,
+      };
+    },
+    timelineTooltipLines(tooltip) {
+      const lines = [];
+      const pushLine = (text, preferredType = null) => {
+        const value = String(text ?? '');
+        if (value.trim() === '') {
+          lines.push({ type: 'spacer', text: '' });
+          return;
+        }
+        const type = preferredType || (value.includes(':') ? 'item' : 'section');
+        lines.push({ type, text: value });
+      };
+
+      (tooltip.title || []).forEach(title => pushLine(title, 'title'));
+      (tooltip.body || []).forEach(bodyItem => {
+        [...(bodyItem.before || []), ...(bodyItem.lines || []), ...(bodyItem.after || [])].forEach(
+          line => pushLine(line)
+        );
+      });
+      (tooltip.footer || []).forEach(line => pushLine(line));
+
+      return lines;
+    },
+    holdTimelineTooltip() {
+      this.timelineTooltipHovered = true;
+      this.clearTimelineTooltipHideTimer();
+    },
+    releaseTimelineTooltip() {
+      this.timelineTooltipHovered = false;
+      this.scheduleTimelineTooltipHide(120);
+    },
+    scheduleTimelineTooltipHide(delay = 300) {
+      this.clearTimelineTooltipHideTimer();
+      this.timelineTooltipHideTimer = window.setTimeout(() => {
+        if (!this.timelineTooltipHovered) {
+          this.timelineTooltip = {
+            ...this.timelineTooltip,
+            visible: false,
+          };
+        }
+      }, delay);
+    },
+    clearTimelineTooltipHideTimer() {
+      if (this.timelineTooltipHideTimer) {
+        window.clearTimeout(this.timelineTooltipHideTimer);
+        this.timelineTooltipHideTimer = null;
+      }
+    },
     addTimelineTooltipSection(lines, title, entries, limit = 4, maxLabelLength = 48) {
       const visibleEntries = (entries || []).slice(0, limit);
       if (visibleEntries.length === 0) {
@@ -2332,6 +2449,49 @@ export default {
   height: 28rem;
 }
 
+.fleet-chart-tooltip {
+  position: fixed;
+  z-index: 2500;
+  width: min(42rem, calc(100vw - 1.5rem));
+  max-height: min(72vh, 36rem);
+  overflow-y: auto;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(127, 127, 127, 0.32);
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.98);
+  color: #18202f;
+  box-shadow: 0 0.9rem 2.5rem rgba(0, 0, 0, 0.24);
+  font-size: 0.86rem;
+  line-height: 1.35;
+  pointer-events: auto;
+  white-space: normal;
+}
+
+.fleet-chart-tooltip-line {
+  word-break: break-word;
+}
+
+.fleet-chart-tooltip-line--title {
+  margin-bottom: 0.35rem;
+  font-weight: 700;
+  color: #0d1626;
+}
+
+.fleet-chart-tooltip-line--section {
+  margin-top: 0.45rem;
+  font-weight: 700;
+  color: #33415c;
+}
+
+.fleet-chart-tooltip-line--item {
+  color: #1e2635;
+  font-variant-numeric: tabular-nums;
+}
+
+.fleet-chart-tooltip-line--spacer {
+  height: 0.45rem;
+}
+
 .fleet-daily-timeline-tools {
   display: flex;
   flex-wrap: wrap;
@@ -2365,5 +2525,24 @@ export default {
 .fleet-summary-empty {
   color: #999;
   font-size: 1.2rem;
+}
+
+.fleet-chart-tooltip--dark {
+  border-color: rgba(233, 235, 240, 0.22);
+  background: rgba(22, 25, 33, 0.98);
+  color: #eef1f6;
+  box-shadow: 0 0.9rem 2.5rem rgba(0, 0, 0, 0.5);
+}
+
+.fleet-chart-tooltip--dark .fleet-chart-tooltip-line--title {
+  color: #fff;
+}
+
+.fleet-chart-tooltip--dark .fleet-chart-tooltip-line--section {
+  color: #cbd3e2;
+}
+
+.fleet-chart-tooltip--dark .fleet-chart-tooltip-line--item {
+  color: #eef1f6;
 }
 </style>
