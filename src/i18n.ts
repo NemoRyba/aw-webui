@@ -86,6 +86,7 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Search activity': 'Aktivität suchen',
     'Filter app, title, URL, device...': 'App, Titel, URL, Gerät filtern...',
     'Show AFK time': 'AFK-Zeit anzeigen',
+    'Subtract AFK time': 'AFK-Zeit abziehen',
     'Show percent': 'Prozent anzeigen',
     'Events counted: {count}': 'Gezählte Ereignisse: {count}',
     'No data': 'Keine Daten',
@@ -458,6 +459,7 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Initial checkbox states for Fleet user summary filters.':
       'Anfangszustand der Checkboxen in Flotten-Benutzerübersichten.',
     'Show AFK time by default': 'AFK-Zeit standardmäßig anzeigen',
+    'Subtract AFK time by default': 'AFK-Zeit standardmäßig abziehen',
     'Count audible browser tab as active by default':
       'Hörbaren Browser-Tab standardmäßig als aktiv zählen',
     Enabled: 'Aktiviert',

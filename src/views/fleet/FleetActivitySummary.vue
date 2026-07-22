@@ -30,11 +30,11 @@ div.fleet-activity-summary.mb-3
         )
       div.col-lg-7
         label.small.text-muted.d-block {{ $tr('Toggles') }}
-        b-form-checkbox(v-model="showAfkTime" size="sm")
-          | {{ $tr('Show AFK time') }}
+        b-form-checkbox(v-model="subtractAfkTime" size="sm")
+          | {{ $tr('Subtract AFK time') }}
         b-form-checkbox(
           v-model="countAudibleBrowserTime"
-          :disabled="showAfkTime"
+          :disabled="!subtractAfkTime"
           size="sm"
         )
           | {{ $tr('Count audible browser tab as active') }}
@@ -291,6 +291,14 @@ export default {
     selectedDeviceSet() {
       return new Set(this.selectedDeviceIds);
     },
+    subtractAfkTime: {
+      get() {
+        return !this.showAfkTime;
+      },
+      set(value) {
+        this.showAfkTime = !value;
+      },
+    },
     reloadKey() {
       return [
         this.user?.username || '',
@@ -308,8 +316,8 @@ export default {
     },
     filterCount() {
       return (
-        (this.showAfkTime ? 1 : 0) +
-        (!this.showAfkTime && !this.countAudibleBrowserTime ? 1 : 0) +
+        (!this.subtractAfkTime ? 1 : 0) +
+        (this.subtractAfkTime && !this.countAudibleBrowserTime ? 1 : 0) +
         (this.normalizedTextFilter ? 1 : 0)
       );
     },

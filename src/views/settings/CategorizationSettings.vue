@@ -38,8 +38,8 @@ div
       small.text-muted
         | {{ $tr('Initial checkbox states for Fleet user summary filters.') }}
     div.mt-2.mt-sm-0
-      b-form-checkbox(v-model="fleetSummaryShowAfkTime" switch)
-        | {{ $tr('Show AFK time by default') }}
+      b-form-checkbox(v-model="fleetSummarySubtractAfkTime" switch)
+        | {{ $tr('Subtract AFK time by default') }}
       b-form-checkbox(v-model="fleetSummaryCountAudibleBrowserTime" switch)
         | {{ $tr('Count audible browser tab as active by default') }}
 
@@ -102,12 +102,12 @@ export default {
         this.settingsStore.update({ afkOverlayColor: value });
       },
     },
-    fleetSummaryShowAfkTime: {
+    fleetSummarySubtractAfkTime: {
       get() {
-        return this.settingsStore.fleetSummaryShowAfkTime;
+        return !this.settingsStore.fleetSummaryShowAfkTime;
       },
       set(value) {
-        this.settingsStore.update({ fleetSummaryShowAfkTime: value });
+        this.settingsStore.update({ fleetSummaryShowAfkTime: !value });
       },
     },
     fleetSummaryCountAudibleBrowserTime: {
