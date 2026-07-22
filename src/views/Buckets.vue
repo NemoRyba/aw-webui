@@ -1,12 +1,20 @@
 <template lang="pug">
 div
-  h2 {{ $tr('Buckets') }}
+  div.d-flex.align-items-center.mb-3
+    h2.mb-0 {{ $tr('Buckets') }}
+    b-button.ml-auto(
+      size="sm"
+      variant="outline-secondary"
+      @click="toggleDeviceSort"
+      :title="$tr('Reverse device order')"
+    )
+      | {{ deviceSortDesc ? $tr('Sort A-Z') : $tr('Sort Z-A') }}
 
   b-alert(show)
     | {{ $tr('Are you looking to collect more data? Check out ') }}#[a(href="https://activitywatch.readthedocs.io/en/latest/watchers.html") {{ $tr('the docs') }}]{{ $tr(' for more watchers.') }}
 
   // By device
-  b-card.mb-3(v-for="device in bucketsStore.bucketsByDevice", :key="device.hostname || device.device_id")
+  b-card.mb-3(v-for="device in orderedDevices", :key="device.hostname || device.device_id")
     div.mb-3
       div.d-flex
         div
@@ -35,7 +43,18 @@ div
 
     b-row
       b-col
-        b-table.mb-0(small, hover, :items="bucketRows(device)", :fields="fields", responsive="md")
+        b-table.mb-0(
+          small
+          hover
+          :items="bucketRows(device)"
+          :fields="fields"
+          responsive="md"
+          sort-by="event_count"
+          :sort-desc="false"
+        )
+          template(v-slot:cell(event_count)="data")
+            span(:class="{ 'text-muted': data.item.event_count === 0 }")
+              | {{ formatEventCount(data.item.event_count) }}
           template(v-slot:cell(last_updated)="data")
             small(v-if="data.item.last_updated", :style="{'color': isRecent(data.item.last_updated) ? 'green' : 'inherit'}")
               | {{ data.item.last_updated | friendlytime }}
@@ -177,15 +196,31 @@ export default {
       import_file: null,
       import_error: null,
       delete_bucket_selected: null,
+      deviceSortDesc: false,
     };
   },
   computed: {
+    orderedDevices() {
+      const devices = Object.values(this.bucketsStore.bucketsByDevice || {});
+      return devices.sort((left: any, right: any) => {
+        const result = this.deviceSortKey(left).localeCompare(
+          this.deviceSortKey(right),
+          undefined,
+          {
+            numeric: true,
+            sensitivity: 'base',
+          }
+        );
+        return this.deviceSortDesc ? -result : result;
+      });
+    },
     fields() {
       return [
         { key: 'id', label: this.$tr('Bucket ID'), sortable: true },
         { key: 'username', label: this.$tr('Username'), sortable: true },
         { key: 'session_id', label: this.$tr('Session'), sortable: true },
         { key: 'watcher_label', label: this.$tr('Watcher'), sortable: true },
+        { key: 'event_count', label: this.$tr('Events'), sortable: true, class: 'text-right' },
         { key: 'last_updated', label: this.$tr('Updated'), sortable: true },
         { key: 'actions', label: '' },
       ];
@@ -226,8 +261,21 @@ export default {
             ? `${identity.sessionId} (${identity.sessionType})`
             : identity.sessionId,
           watcher_label: identity.watcherLabel,
+          event_count: Number.isFinite(bucket.event_count) ? bucket.event_count : null,
         };
       });
+    },
+    formatEventCount: function (value) {
+      if (!Number.isFinite(value)) {
+        return '—';
+      }
+      return value.toLocaleString();
+    },
+    deviceSortKey: function (device) {
+      return String(device.hostname || device.device_id || 'unknown');
+    },
+    toggleDeviceSort: function () {
+      this.deviceSortDesc = !this.deviceSortDesc;
     },
     isRecent: function (date) {
       return moment().diff(date) / 1000 < 120;

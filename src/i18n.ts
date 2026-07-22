@@ -188,6 +188,9 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Devices included in this summary': 'In dieser Zusammenfassung enthaltene Geräte',
     'All devices': 'Alle Geräte',
     Buckets: 'Buckets',
+    'Sort A-Z': 'A-Z sortieren',
+    'Sort Z-A': 'Z-A sortieren',
+    'Reverse device order': 'Gerätereihenfolge umkehren',
     'Are you looking to collect more data? Check out ':
       'Möchtest du mehr Daten erfassen? Sieh dir ',
     'the docs': 'die Dokumentation',

@@ -14,6 +14,7 @@ export interface IBucket {
   name?: string;
   data: Record<string, any>;
   metadata?: { start: Date; end: Date };
+  event_count?: number;
   last_updated?: Date;
   first_seen?: Date;
   created?: Date;
