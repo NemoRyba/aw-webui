@@ -788,6 +788,40 @@ export default {
     timelineAfkData() {
       return this.timelineSeries.afkData;
     },
+    activeSessionIntervals() {
+      const intervals = [];
+
+      for (const bucket of this.rawTimelineBuckets || []) {
+        if (!this.isSessionBucket(bucket)) {
+          continue;
+        }
+
+        for (const event of bucket.events || []) {
+          const identity = this.eventIdentity(bucket, event);
+          if (!this.matchesIdentity(identity) || (event.data || {}).state !== 'active') {
+            continue;
+          }
+
+          const interval = this.clipEventInterval(event);
+          if (!interval) {
+            continue;
+          }
+
+          intervals.push(interval);
+        }
+      }
+
+      return this.mergeIntervals(intervals);
+    },
+    timelineActiveSessionSecondsByBin() {
+      const totals = Array.from({ length: this.timelineBins.length }, () => 0);
+      this.activeSessionIntervals.forEach(interval => {
+        this.timelineBins.forEach((bin, index) => {
+          totals[index] += this.overlapSeconds(interval.start, interval.end, bin.start, bin.end);
+        });
+      });
+      return totals.map(value => Math.round(value));
+    },
     timelineBinTotals() {
       const totals = Array.from({ length: this.timelineBins.length }, () => 0);
       (this.timelineDatasets || []).forEach((dataset: any) => {
@@ -994,7 +1028,9 @@ export default {
       const afkData = this.timelineAfkData;
       const afkLabel = this.$tr('AFK time');
       const totalTimeLabel = this.$tr('Total time');
+      const activeSessionTimeLabel = this.$tr('Active session time');
       const collectedDeviceTimeLabel = this.$tr('Collected device time');
+      const activeSessionSecondsByBin = this.timelineActiveSessionSecondsByBin;
       const formatTooltipDetail = this.formatTimelineTooltipDetail.bind(this);
       const formatAxisTooltipDetail = this.formatTimelineAxisTooltipDetail.bind(this);
       const plugins: any = {
@@ -1006,6 +1042,11 @@ export default {
             this.updateTimelineExternalTooltip(context);
           },
           callbacks: {
+            beforeTitle(items) {
+              const index = items?.[0]?.dataIndex;
+              const seconds = Number(activeSessionSecondsByBin?.[index] || 0);
+              return `${activeSessionTimeLabel}: ${seconds_to_duration(seconds)}`;
+            },
             label(context) {
               const dataset: any = context.dataset;
               const visibleSeconds = Number(context.parsed.y || 0) * 3600;
@@ -1444,6 +1485,7 @@ export default {
       if (
         !this.isWindowBucket(bucket) &&
         bucket?.type !== 'afkstatus' &&
+        !this.isSessionBucket(bucket) &&
         !this.isBrowserBucket(bucket)
       ) {
         return false;
@@ -2027,6 +2069,9 @@ export default {
     },
     isBrowserBucket(bucket) {
       return bucket?.type === 'web.tab.current';
+    },
+    isSessionBucket(bucket) {
+      return bucket?.type === 'sessionstate';
     },
     isAudibleBrowserEvent(event) {
       const audible = (event.data || {}).audible;
