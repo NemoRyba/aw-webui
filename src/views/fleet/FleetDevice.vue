@@ -30,7 +30,9 @@ div
       :device-ids="[device_id]"
       :start="rangeStart"
       :end="rangeEnd"
-      :max-points="480"
+      :max-points="720"
+      :default-visible="true"
+      :show-toggle="false"
     )
 
   div.row(v-if="device")

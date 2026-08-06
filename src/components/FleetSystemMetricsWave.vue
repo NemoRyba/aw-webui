@@ -1,8 +1,10 @@
 <template lang="pug">
 div.fleet-system-metrics(:class="{ 'fleet-system-metrics--dark': activeTheme === 'dark', 'fleet-system-metrics--compact': compact }")
   div.fleet-system-metrics-toolbar
-    b-form-checkbox(v-model="visible" switch size="sm")
+    b-form-checkbox(v-if="showToggle" v-model="visible" switch size="sm")
       | {{ $tr('Show system load') }}
+    span.fleet-system-metrics-title(v-else)
+      | {{ $tr('System load') }}
     b-button(
       v-if="visible"
       size="sm"
@@ -38,37 +40,40 @@ div.fleet-system-metrics(:class="{ 'fleet-system-metrics--dark': activeTheme ===
               span.fleet-system-metrics-dot.fleet-system-metrics-dot--memory
               | RAM {{ percentLabel(device.latest_memory_percent) }}
 
-        div.fleet-system-wave-wrap
-          svg.fleet-system-wave(viewBox="0 0 1000 128" preserveAspectRatio="none")
-            line(
-              v-for="gridLine in yGridLines"
-              :key="'grid-' + gridLine.value"
-              x1="0"
-              x2="1000"
-              :y1="gridLine.y"
-              :y2="gridLine.y"
-            )
-            polyline.fleet-system-wave-line.fleet-system-wave-line--cpu(
-              v-if="metricPoints(device, 'cpu_percent')"
-              :points="metricPoints(device, 'cpu_percent')"
-              :style="{ stroke: deviceColor(device.device_id, 0) }"
-            )
-              title {{ metricTitle(device, 'CPU', 'cpu_percent') }}
-            polyline.fleet-system-wave-line.fleet-system-wave-line--memory(
-              v-if="metricPoints(device, 'memory_percent')"
-              :points="metricPoints(device, 'memory_percent')"
-              :style="{ stroke: deviceColor(device.device_id, 1) }"
-            )
-              title {{ metricTitle(device, 'RAM', 'memory_percent') }}
-          div.fleet-system-wave-y-label.fleet-system-wave-y-label--top 100%
-          div.fleet-system-wave-y-label.fleet-system-wave-y-label--mid 50%
-          div.fleet-system-wave-y-label.fleet-system-wave-y-label--bottom 0%
-          div.fleet-system-wave-x-axis
-            span(
-              v-for="tick in xTicks"
-              :key="tick.value"
-              :style="{ left: tick.left }"
-            ) {{ tick.label }}
+        div.fleet-system-wave-shell
+          div.fleet-system-wave-y-axis
+            div.fleet-system-wave-y-label.fleet-system-wave-y-label--top 100%
+            div.fleet-system-wave-y-label.fleet-system-wave-y-label--mid 50%
+            div.fleet-system-wave-y-label.fleet-system-wave-y-label--bottom 0%
+          div.fleet-system-wave-scroll
+            div.fleet-system-wave-canvas(:style="{ minWidth: metricsChartMinWidth }")
+              svg.fleet-system-wave(viewBox="0 0 1000 128" preserveAspectRatio="none")
+                line(
+                  v-for="gridLine in yGridLines"
+                  :key="'grid-' + gridLine.value"
+                  x1="0"
+                  x2="1000"
+                  :y1="gridLine.y"
+                  :y2="gridLine.y"
+                )
+                polyline.fleet-system-wave-line.fleet-system-wave-line--cpu(
+                  v-if="metricPoints(device, 'cpu_percent')"
+                  :points="metricPoints(device, 'cpu_percent')"
+                  :style="{ stroke: deviceColor(device.device_id, 0) }"
+                )
+                  title {{ metricTitle(device, 'CPU', 'cpu_percent') }}
+                polyline.fleet-system-wave-line.fleet-system-wave-line--memory(
+                  v-if="metricPoints(device, 'memory_percent')"
+                  :points="metricPoints(device, 'memory_percent')"
+                  :style="{ stroke: deviceColor(device.device_id, 1) }"
+                )
+                  title {{ metricTitle(device, 'RAM', 'memory_percent') }}
+              div.fleet-system-wave-x-axis
+                span(
+                  v-for="tick in xTicks"
+                  :key="tick.value"
+                  :style="{ left: tick.left }"
+                ) {{ tick.label }}
 </template>
 
 <script lang="ts">
@@ -97,6 +102,10 @@ export default {
     defaultVisible: {
       type: Boolean,
       default: false,
+    },
+    showToggle: {
+      type: Boolean,
+      default: true,
     },
     compact: {
       type: Boolean,
@@ -159,6 +168,27 @@ export default {
     },
     hasMetrics() {
       return this.metricDevices.length > 0;
+    },
+    metricsChartMinWidth() {
+      if (!this.canLoad) {
+        return '100%';
+      }
+
+      const hours = Math.max(1, this.rangeEnd.diff(this.rangeStart, 'hours', true));
+      const days = hours / 24;
+      let width;
+
+      if (days <= 3.1) {
+        width = hours * (this.compact ? 38 : 52);
+      } else if (days <= 45) {
+        width = days * (this.compact ? 78 : 96);
+      } else if (days <= 370) {
+        width = days * (this.compact ? 18 : 24);
+      } else {
+        width = days * (this.compact ? 8 : 10);
+      }
+
+      return `${Math.max(this.compact ? 1020 : 1260, Math.min(width, 14000))}px`;
     },
     xTicks() {
       if (!this.canLoad) {
@@ -373,6 +403,11 @@ export default {
   margin-bottom: 0.65rem;
 }
 
+.fleet-system-metrics-title {
+  color: #273247;
+  font-weight: 600;
+}
+
 .fleet-system-metrics-list {
   display: grid;
   grid-template-columns: 1fr;
@@ -422,15 +457,36 @@ export default {
   background: #8d57d8;
 }
 
-.fleet-system-wave-wrap {
-  position: relative;
+.fleet-system-wave-shell {
+  display: flex;
+  align-items: stretch;
   min-width: 0;
-  height: 9.8rem;
-  padding: 0 0 1.35rem 2.4rem;
 }
 
-.fleet-system-metrics--compact .fleet-system-wave-wrap {
-  height: 7.8rem;
+.fleet-system-wave-y-axis {
+  position: relative;
+  flex: 0 0 2.6rem;
+  height: 12.5rem;
+  user-select: none;
+}
+
+.fleet-system-wave-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.35rem;
+}
+
+.fleet-system-wave-canvas {
+  position: relative;
+  height: 12.5rem;
+  padding-bottom: 1.45rem;
+}
+
+.fleet-system-metrics--compact .fleet-system-wave-y-axis,
+.fleet-system-metrics--compact .fleet-system-wave-canvas {
+  height: 9.2rem;
 }
 
 .fleet-system-wave {
@@ -458,7 +514,7 @@ export default {
 
 .fleet-system-wave-y-label {
   position: absolute;
-  left: 0;
+  right: 0.45rem;
   color: #6c757d;
   font-size: 0.72rem;
   line-height: 1;
@@ -474,14 +530,14 @@ export default {
 }
 
 .fleet-system-wave-y-label--bottom {
-  bottom: 1.5rem;
+  bottom: 1.7rem;
 }
 
 .fleet-system-wave-x-axis {
   position: absolute;
   right: 0;
   bottom: 0;
-  left: 2.4rem;
+  left: 0;
   height: 1.2rem;
   color: #6c757d;
   font-size: 0.72rem;
@@ -512,6 +568,7 @@ export default {
 }
 
 .fleet-system-metrics--dark .fleet-system-metrics-latest,
+.fleet-system-metrics--dark .fleet-system-metrics-title,
 .fleet-system-metrics--dark .fleet-system-wave-y-label,
 .fleet-system-metrics--dark .fleet-system-wave-x-axis {
   color: #b9c1cf;

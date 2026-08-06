@@ -60,7 +60,7 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
           div.text-muted.small {{ $tr('Active session time') }}
           div.fleet-session-summary-value {{ activeSessionDurationLabel }}
         div.fleet-session-summary-help.text-muted.small
-          | {{ $tr('Overlapping active sessions across selected devices are counted once.') }}
+          | {{ $tr('AFK time is subtracted when available; overlapping active sessions across selected devices are counted once.') }}
 
     div.col-12.mb-3
       div.fleet-summary-panel.fleet-summary-panel--timeline
@@ -123,13 +123,6 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
               | {{ $tr('All') }}
             b-button(size="sm" variant="outline-secondary" @click="clearDailyWatchers" :disabled="dailyWatcherOptions.length === 0")
               | {{ $tr('None') }}
-        fleet-system-metrics-wave.mb-3(
-          :device-ids="selectedDeviceIds"
-          :start="rangeStartIso"
-          :end="rangeEndIso"
-          :max-points="420"
-          compact
-        )
         div.small.text-muted.mb-2(v-if="dailyWatcherOptions.length === 0")
           | {{ $tr('No watchers available for the current selection.') }}
         div.fleet-daily-watcher-controls.mb-3(v-else)
@@ -140,6 +133,17 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
             :value="watcher.value"
           )
             | {{ watcher.text }}
+        fleet-system-metrics-wave.mb-3(
+          v-if="selectedSystemMetricDeviceIds.length > 0"
+          :key="'system-metrics-' + selectedSystemMetricDeviceIds.join('|') + '-' + panelRefreshKeys.dailyTimeline"
+          :device-ids="selectedSystemMetricDeviceIds"
+          :start="rangeStartIso"
+          :end="rangeEndIso"
+          :max-points="540"
+          :default-visible="true"
+          :show-toggle="false"
+          compact
+        )
         vis-timeline(
           v-if="selectedDailyTimelineBuckets.length > 0"
           :key="dailyTimelineKey"
@@ -289,6 +293,7 @@ import { seconds_to_duration } from '~/util/time';
 import { detectPreferredTheme } from '~/util/theme';
 
 const CATEGORY_KEY_SEPARATOR = '>>>';
+const SYSTEM_METRIC_WATCHER_KEY_PREFIX = '__systemmetrics__::';
 const UNKNOWN = 'Unknown';
 const BROWSER_APP_NAMES = new Set(
   [
@@ -849,7 +854,49 @@ export default {
       };
     },
     activeSessionDurationLabel() {
-      return seconds_to_duration(Number(this.user?.totals?.active_seconds || 0));
+      const seconds =
+        this.localNotAfkActiveSessionSeconds ??
+        this.user?.totals?.not_afk_active_seconds ??
+        this.user?.totals?.active_seconds ??
+        0;
+      return seconds_to_duration(Number(seconds || 0));
+    },
+    localNotAfkActiveSessionSeconds() {
+      if (!this.rawTimelineBuckets || this.rawTimelineBuckets.length === 0) {
+        return null;
+      }
+
+      const browserEvents = this.buildBrowserEvents(this.rawTimelineBuckets);
+      const activeContext = this.buildActiveIntervalsBySession(
+        this.rawTimelineBuckets,
+        browserEvents
+      );
+      const sessionActiveIntervals = this.buildSessionStateIntervalsBySession(
+        this.rawTimelineBuckets,
+        'active'
+      );
+      if (sessionActiveIntervals.size === 0) {
+        return null;
+      }
+
+      const intervals = [];
+      for (const [key, activeIntervals] of sessionActiveIntervals.entries()) {
+        if (!activeContext.sessionsWithAfkData.has(key)) {
+          intervals.push(...activeIntervals);
+          continue;
+        }
+
+        const notAfkIntervals = activeContext.intervalsBySession.get(key) || [];
+        for (const activeInterval of activeIntervals) {
+          intervals.push(...this.intersectWithIntervals(activeInterval, notAfkIntervals));
+        }
+      }
+
+      return _.sum(
+        this.mergeIntervals(intervals).map(interval =>
+          interval.end.diff(interval.start, 'seconds', true)
+        )
+      );
     },
     dailyTimelineInterval() {
       if (!this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
@@ -865,17 +912,28 @@ export default {
       ];
     },
     dailyWatcherOptions() {
+      const timelineOptions = this.dailyTimelineBuckets.map(bucket => {
+        const identity = this.bucketIdentity(bucket);
+        return {
+          value: String(bucket.id),
+          text: this.buildDailyTimelineBucketLabel(bucket),
+          sortDeviceName: identity.deviceName,
+          sortSessionId: identity.sessionId,
+          sortWatcherLabel: identity.watcherLabel,
+          defaultSelected: true,
+        };
+      });
+      const systemMetricOptions = this.systemMetricDevices.map(device => ({
+        value: this.systemMetricWatcherKey(device.deviceId),
+        text: `${this.$tr('System load')} | ${device.deviceName || device.deviceId}`,
+        sortDeviceName: device.deviceName || device.deviceId,
+        sortSessionId: 'zz-system',
+        sortWatcherLabel: this.$tr('System load'),
+        defaultSelected: false,
+      }));
+
       return _.orderBy(
-        this.dailyTimelineBuckets.map(bucket => {
-          const identity = this.bucketIdentity(bucket);
-          return {
-            value: String(bucket.id),
-            text: this.buildDailyTimelineBucketLabel(bucket),
-            sortDeviceName: identity.deviceName,
-            sortSessionId: identity.sessionId,
-            sortWatcherLabel: identity.watcherLabel,
-          };
-        }),
+        [...timelineOptions, ...systemMetricOptions],
         [
           (option: any) => String(option.sortDeviceName || '').toLowerCase(),
           (option: any) => String(option.sortSessionId || '').toLowerCase(),
@@ -883,6 +941,51 @@ export default {
         ],
         ['asc', 'asc', 'asc']
       );
+    },
+    systemMetricDevices() {
+      if (!this.showDetailedWatcherTimeline) {
+        return [];
+      }
+
+      const devicesById = new Map();
+      for (const bucket of this.bucketsStore.buckets || []) {
+        if (String(bucket?.type || '') !== 'systemmetrics') {
+          continue;
+        }
+
+        const identity = this.bucketIdentity(bucket);
+        if (
+          this.selectedDeviceSet.size > 0 &&
+          hasIdentityValue(identity.deviceId) &&
+          !this.selectedDeviceSet.has(identity.deviceId)
+        ) {
+          continue;
+        }
+
+        const deviceId = hasIdentityValue(identity.deviceId)
+          ? identity.deviceId
+          : identity.hostname;
+        if (!hasIdentityValue(deviceId)) {
+          continue;
+        }
+
+        devicesById.set(deviceId, {
+          deviceId,
+          deviceName: hasIdentityValue(identity.deviceName) ? identity.deviceName : deviceId,
+        });
+      }
+
+      return _.orderBy(
+        Array.from(devicesById.values()),
+        [device => String(device.deviceName || device.deviceId).toLowerCase()],
+        ['asc']
+      );
+    },
+    selectedSystemMetricDeviceIds() {
+      const selectedKeys = new Set(this.selectedDailyWatcherKeys.map(value => String(value)));
+      return this.systemMetricDevices
+        .filter(device => selectedKeys.has(this.systemMetricWatcherKey(device.deviceId)))
+        .map(device => String(device.deviceId));
     },
     dailyWatcherSignature() {
       return this.dailyWatcherOptions.map(option => option.value).join('|');
@@ -1580,7 +1683,11 @@ export default {
       this.selectedDailyWatcherKeys = [];
     },
     syncDailyTimelineWatchers() {
-      const available = this.dailyWatcherOptions.map(option => option.value);
+      const availableOptions = this.dailyWatcherOptions;
+      const available = availableOptions.map(option => option.value);
+      const defaultSelection = availableOptions
+        .filter((option: any) => option.defaultSelected !== false)
+        .map(option => option.value);
 
       if (available.length === 0) {
         if (this.selectedDailyWatcherKeys.length > 0) {
@@ -1594,13 +1701,47 @@ export default {
       );
 
       if (this.selectedDailyWatcherKeys.length === 0 || filteredSelection.length === 0) {
-        this.selectedDailyWatcherKeys = [...available];
+        this.selectedDailyWatcherKeys = [...defaultSelection];
         return;
       }
 
       if (!_.isEqual(filteredSelection, this.selectedDailyWatcherKeys)) {
         this.selectedDailyWatcherKeys = filteredSelection;
       }
+    },
+    systemMetricWatcherKey(deviceId) {
+      return `${SYSTEM_METRIC_WATCHER_KEY_PREFIX}${deviceId}`;
+    },
+    buildSessionStateIntervalsBySession(buckets, state) {
+      const intervalsBySession = new Map();
+      for (const bucket of buckets || []) {
+        if (bucket?.type !== 'sessionstate') {
+          continue;
+        }
+
+        for (const event of bucket.events || []) {
+          const identity = this.eventIdentity(bucket, event);
+          if (!this.matchesIdentity(identity) || (event.data || {}).state !== state) {
+            continue;
+          }
+
+          const interval = this.clipEventInterval(event);
+          if (!interval) {
+            continue;
+          }
+
+          const key = this.sessionKey(identity);
+          const intervals = intervalsBySession.get(key) || [];
+          intervals.push(interval);
+          intervalsBySession.set(key, intervals);
+        }
+      }
+
+      for (const [key, intervals] of intervalsBySession.entries()) {
+        intervalsBySession.set(key, this.mergeIntervals(intervals));
+      }
+
+      return intervalsBySession;
     },
     buildActiveWindowEvents(buckets) {
       const browserEvents = this.buildBrowserEvents(buckets);
