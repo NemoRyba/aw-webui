@@ -13,6 +13,8 @@ import {
   IFleetStorageStatus,
   IFleetUserDetail,
   IFleetUserListItem,
+  IRedmineComparisonResponse,
+  IRedmineConfig,
 } from '~/util/interfaces';
 
 const STORAGE_CACHE_PREFIX = 'aw-fleet-storage-status:';
@@ -39,6 +41,8 @@ interface State {
   storage: IFleetStorageStatus | null;
   summary: IFleetSummaryResponse | null;
   summaryPrecomputeConfig: IFleetSummaryPrecomputeConfig | null;
+  redmineConfig: IRedmineConfig | null;
+  redmineComparison: IRedmineComparisonResponse | null;
   users: IFleetUserListItem[];
   devices: IFleetDeviceListItem[];
   deviceMetrics: IFleetDeviceMetricsResponse | null;
@@ -52,6 +56,8 @@ export const useFleetStore = defineStore('fleet', {
     storage: null,
     summary: null,
     summaryPrecomputeConfig: null,
+    redmineConfig: null,
+    redmineComparison: null,
     users: [],
     devices: [],
     deviceMetrics: null,
@@ -140,6 +146,32 @@ export const useFleetStore = defineStore('fleet', {
         });
       }
       return result;
+    },
+
+    async loadRedmineConfig(): Promise<IRedmineConfig> {
+      const response = await getClient().req.get('/0/admin/redmine');
+      this.$patch({ redmineConfig: response.data });
+      return response.data;
+    },
+
+    async saveRedmineConfig(config: Partial<IRedmineConfig>): Promise<IRedmineConfig> {
+      const response = await getClient().req.post('/0/admin/redmine', config);
+      this.$patch({ redmineConfig: response.data });
+      return response.data;
+    },
+
+    async testRedmineConfig(
+      config: Partial<IRedmineConfig>
+    ): Promise<{ ok: boolean; message: string }> {
+      const response = await getClient().req.post('/0/admin/redmine/test', config);
+      return response.data;
+    },
+
+    async loadRedmineComparison(payload = {}): Promise<IRedmineComparisonResponse> {
+      const response = await getClient().req.post('/0/fleet/redmine-comparison', payload);
+      const comparison = response.data;
+      this.$patch({ redmineComparison: comparison });
+      return comparison;
     },
 
     async loadUser(username: string, params = {}): Promise<IFleetUserDetail> {

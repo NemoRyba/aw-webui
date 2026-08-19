@@ -197,6 +197,53 @@ export interface IFleetSummaryPrecomputeResult {
   runs?: IFleetSummaryPrecomputeRun[];
 }
 
+export interface IRedmineConfig {
+  enabled: boolean;
+  driver: string;
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  table_prefix: string;
+  mysql_cli_path: string;
+  connect_timeout: number;
+  password_present?: boolean;
+  clear_password?: boolean;
+}
+
+export interface IRedmineComparisonUser {
+  username: string;
+  email: string;
+  display_name?: string;
+  ldap_source?: string;
+  matched: boolean;
+  status: string;
+  redmine_user_id?: number | null;
+  redmine_login?: string;
+  redmine_name?: string;
+  redmine_hours?: number | null;
+  redmine_seconds?: number | null;
+  entry_count: number;
+  projects: Array<{
+    project_id?: number | null;
+    project_name: string;
+    hours: number;
+    seconds: number;
+    entry_count: number;
+  }>;
+}
+
+export interface IRedmineComparisonResponse {
+  generated_at: string;
+  enabled: boolean;
+  range: { start: string; end: string };
+  spent_on_range?: { from: string; to: string } | null;
+  users: IRedmineComparisonUser[];
+  totals: { redmine_hours: number; redmine_seconds: number };
+  message?: string;
+  error?: string;
+}
+
 export interface IFleetDeviceDetail {
   device_id: string;
   device_name: string;
