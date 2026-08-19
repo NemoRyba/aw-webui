@@ -3,6 +3,7 @@ import moment, { Moment } from 'moment';
 import { getClient } from '~/util/awclient';
 import { Category, defaultCategories, cleanCategory } from '~/util/classes';
 import { View, defaultViews } from '~/stores/views';
+import { DEFAULT_LANDING_PAGE, normalizeLandingPage } from '~/util/landingPage';
 import { isEqual } from 'lodash';
 
 function jsonEq(a: any, b: any) {
@@ -70,7 +71,7 @@ export const useSettingsStore = defineStore('settings', {
     afkOverlayColor: '#ff4d4f',
     fleetActivitySummaryFilterStateData: {},
     timelineStateColorsData: {},
-    landingpage: '/home',
+    landingpage: DEFAULT_LANDING_PAGE,
 
     theme: 'auto',
 
@@ -155,6 +156,9 @@ export const useSettingsStore = defineStore('settings', {
         } else {
           storage[key] = value;
         }
+      }
+      if (storage['landingpage'] !== undefined) {
+        storage['landingpage'] = normalizeLandingPage(storage['landingpage']);
       }
       this.$patch({ ...storage, _loaded: true });
 

@@ -31,6 +31,7 @@ div.min-vh-100.d-flex.align-items-center.justify-content-center.px-3.py-5(style=
 <script lang="ts">
 import { useAuthStore } from '~/stores/auth';
 import { useSettingsStore } from '~/stores/settings';
+import { getSettingsLandingPage, isLandingRedirectPath } from '~/util/landingPage';
 
 export default {
   name: 'Login',
@@ -52,10 +53,12 @@ export default {
         await this.authStore.login(this.username, this.password);
         await this.settingsStore.load();
 
+        const requestedNext =
+          typeof this.$route.query.next === 'string' ? this.$route.query.next : '';
         const nextPath =
-          typeof this.$route.query.next === 'string'
-            ? this.$route.query.next
-            : localStorage.landingpage || '/home';
+          requestedNext && !isLandingRedirectPath(requestedNext)
+            ? requestedNext
+            : getSettingsLandingPage(this.settingsStore);
         await this.$router.replace(nextPath);
       } catch (e) {
         console.error('Login failed:', e);

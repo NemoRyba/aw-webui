@@ -5,7 +5,6 @@ div
       h5.mt-1.mb-2.mb-sm-0 {{ $tr('Landing page') }}
     div
       b-select.landingpage(v-if="loaded" size="sm" :value="landingpage", @change="landingpage = $event")
-        option(value="/home") {{ $tr('Home') }}
         option(value="/fleet") {{ $tr('Fleet') }}
         option(:value="'/activity/' + hostname + '/view/'" v-for="hostname in hostnames")
           | {{ $tr('Activity') }} ({{hostname}})
@@ -19,6 +18,7 @@ div
 <script lang="ts">
 import { useSettingsStore } from '~/stores/settings';
 import { useBucketsStore } from '~/stores/buckets';
+import { getSettingsLandingPage, normalizeLandingPage } from '~/util/landingPage';
 
 export default {
   name: 'LandingPageSettings',
@@ -33,11 +33,11 @@ export default {
     landingpage: {
       get: function () {
         const settingsStore = useSettingsStore();
-        return settingsStore.landingpage || '/home';
+        return getSettingsLandingPage(settingsStore);
       },
       set: function (val) {
         const settingsStore = useSettingsStore();
-        settingsStore.update({ landingpage: val });
+        settingsStore.update({ landingpage: normalizeLandingPage(val) });
       },
     },
     hostnames() {

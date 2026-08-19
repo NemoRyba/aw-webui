@@ -3,7 +3,7 @@ div(:class="{'fixed-top-padding': fixedTopMenu}")
   b-navbar.aw-navbar(toggleable="lg" :fixed="fixedTopMenu ? 'top' : null")
     // Brand on mobile
     b-navbar-nav.d-block.d-lg-none
-      b-navbar-brand(to="/" style="background-color: transparent;")
+      b-navbar-brand(:to="landingPage" style="background-color: transparent;")
         img.aligh-middle(src="/logo.png" style="height: 1.5em;")
         span.ml-2.align-middle(style="font-size: 1em; color: #000;") ActivityWatch
 
@@ -51,7 +51,7 @@ div(:class="{'fixed-top-padding': fixedTopMenu}")
 
       // Brand on large screens (centered)
       b-navbar-nav.abs-center.d-none.d-lg-block
-        b-navbar-brand(to="/" style="background-color: transparent;")
+        b-navbar-brand(:to="landingPage" style="background-color: transparent;")
           img.ml-0.aligh-middle(src="/logo.png" style="height: 1.5em;")
           span.ml-2.align-middle(style="font-size: 1.0em; color: #000;") ActivityWatch
 
@@ -180,6 +180,7 @@ import { useAuthStore } from '~/stores/auth';
 import { useSettingsStore } from '~/stores/settings';
 import { useBucketsStore } from '~/stores/buckets';
 import { getLanguageOptions } from '~/i18n';
+import { getSettingsLandingPage } from '~/util/landingPage';
 import { IBucket } from '~/util/interfaces';
 
 export default {
@@ -224,6 +225,10 @@ export default {
     },
     languageOptions() {
       return getLanguageOptions(this.language);
+    },
+    landingPage() {
+      const settingsStore = useSettingsStore();
+      return getSettingsLandingPage(settingsStore);
     },
   },
   mounted: async function () {
@@ -290,7 +295,7 @@ export default {
       try {
         await adminUiStore.update(this.adminSettingsDraft);
         if (this.$route.path === '/stopwatch' && !adminUiStore.showStopwatchMenu) {
-          await this.$router.replace(localStorage.landingpage || '/home');
+          await this.$router.replace(this.landingPage);
         }
         this.$nextTick(() => {
           this.$refs.adminSettingsModal.hide();

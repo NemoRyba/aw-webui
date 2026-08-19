@@ -3,8 +3,9 @@ import VueRouter from 'vue-router';
 import pinia from './stores';
 import { useAdminUiStore } from './stores/adminUi';
 import { useAuthStore } from './stores/auth';
+import { useSettingsStore } from './stores/settings';
+import { getSettingsLandingPage, isLandingRedirectPath } from './util/landingPage';
 
-const Home = () => import('./views/Home.vue');
 const Login = () => import('./views/Login.vue');
 const FleetOverview = () => import('./views/fleet/FleetOverview.vue');
 const FleetUsers = () => import('./views/fleet/FleetUsers.vue');
@@ -38,12 +39,10 @@ const router = new VueRouter({
   routes: [
     {
       path: '/',
-      redirect: _to => {
-        return localStorage.landingpage || '/home';
-      },
+      component: FleetOverview,
     },
     { path: '/login', component: Login, meta: { public: true, authOnly: true } },
-    { path: '/home', component: Home },
+    { path: '/home', component: FleetOverview },
     { path: '/fleet', component: FleetOverview },
     { path: '/fleet/users', component: FleetUsers },
     { path: '/fleet/users/:username', component: FleetUser, props: true },
@@ -99,17 +98,24 @@ router.beforeEach(async (to, _from, next) => {
 
   if (authStore.authenticated) {
     const adminUiStore = useAdminUiStore(pinia);
+    const settingsStore = useSettingsStore(pinia);
+    await settingsStore.ensureLoaded();
     await adminUiStore.ensureLoaded();
+    const landingPage = getSettingsLandingPage(settingsStore);
+
+    if (isLandingRedirectPath(to.path)) {
+      next(landingPage);
+      return;
+    }
 
     if (to.path === '/login') {
-      next(
-        (typeof to.query.next === 'string' && to.query.next) || localStorage.landingpage || '/home'
-      );
+      const requestedNext = typeof to.query.next === 'string' ? to.query.next : '';
+      next(requestedNext && !isLandingRedirectPath(requestedNext) ? requestedNext : landingPage);
       return;
     }
 
     if (to.path === '/stopwatch' && !adminUiStore.showStopwatchMenu) {
-      next(localStorage.landingpage || '/home');
+      next(landingPage);
       return;
     }
 
