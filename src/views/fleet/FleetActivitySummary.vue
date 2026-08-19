@@ -30,16 +30,82 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
         )
       div.col-lg-7
         label.small.text-muted.d-block {{ $tr('Toggles') }}
-        b-form-checkbox(v-model="subtractAfkTime" size="sm")
+        b-form-checkbox(
+          v-model="subtractAfkTime"
+          size="sm"
+          @change="queueFleetActivitySummaryFilterStateSave"
+        )
           | {{ $tr('Subtract AFK time') }}
+        div.d-flex.flex-wrap.align-items-center.mt-1
+          b-form-checkbox(
+            v-model="ignoreShortAfkPeriods"
+            :disabled="!subtractAfkTime"
+            size="sm"
+            @change="queueFleetActivitySummaryFilterStateSave"
+          )
+            | {{ $tr('Ignore short AFK periods up to') }}
+          b-input-group.fleet-short-afk-input.ml-sm-2.mt-1.mt-sm-0(size="sm")
+            b-form-input(
+              v-model.number="shortAfkThresholdValue"
+              type="number"
+              min="1"
+              step="1"
+              :disabled="!subtractAfkTime || !ignoreShortAfkPeriods"
+              :aria-label="$tr('Short AFK threshold')"
+              @input="queueFleetActivitySummaryFilterStateSave"
+              @change="queueFleetActivitySummaryFilterStateSave"
+            )
+            b-form-select(
+              v-model="shortAfkThresholdUnit"
+              :options="shortAfkThresholdUnitOptions"
+              :disabled="!subtractAfkTime || !ignoreShortAfkPeriods"
+              :aria-label="$tr('Short AFK unit')"
+              @change="queueFleetActivitySummaryFilterStateSave"
+            )
+          span.fleet-short-afk-max.small.text-muted.ml-sm-2.mt-1.mt-sm-0(
+            v-if="maxActiveSessionAfkPeriodLabel"
+          )
+            | {{ $tr('Max active-session AFK') }}: {{ maxActiveSessionAfkPeriodLabel }}
         b-form-checkbox(
           v-model="countAudibleBrowserTime"
           :disabled="!subtractAfkTime"
           size="sm"
+          @change="queueFleetActivitySummaryFilterStateSave"
         )
           | {{ $tr('Count audible browser tab as active') }}
+        b-form-checkbox(
+          v-model="treatAfkDataGapsAsActive"
+          :disabled="!subtractAfkTime"
+          size="sm"
+          @change="queueFleetActivitySummaryFilterStateSave"
+        )
+          | {{ $tr('Count AFK watcher gaps as active only inside active sessions') }}
+        div.fleet-ignored-category-filter.mt-3
+          div.d-flex.flex-wrap.align-items-center.justify-content-between.mb-1
+            label.small.text-muted.mb-0 {{ $tr('Ignored categories') }}
+            b-button(
+              v-if="ignoredCategoryKeys.length > 0"
+              size="sm"
+              variant="outline-secondary"
+              @click="clearIgnoredCategories"
+            )
+              | {{ $tr('Clear ignored categories') }}
+          div.fleet-ignored-category-list(v-if="ignoredCategoryOptions.length > 0")
+            b-form-checkbox(
+              v-for="option in ignoredCategoryOptions"
+              :key="option.value"
+              v-model="ignoredCategoryKeys"
+              :value="option.value"
+              size="sm"
+              @change="queueFleetActivitySummaryFilterStateSave"
+            )
+              | {{ option.text }}
+          div.small.text-muted(v-else)
+            | {{ $tr('No categories available in current range') }}
+          div.small.text-muted.mt-1
+            | {{ $tr('Ignored categories are removed from activity summaries and charts.') }}
     div.fleet-filter-meta.small.text-muted.mt-2(v-if="activeWindowEvents.length > 0")
-      | {{ $tr('Events counted: {count}', { count: filteredWindowEvents.length }) }}
+      | {{ $tr('Events counted: {count}', { count: countedWindowEventCount }) }}
 
   b-alert(v-if="loadError" show variant="danger")
     | {{ loadError }}
@@ -50,17 +116,21 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
   b-alert(v-else-if="activeWindowEvents.length === 0" show variant="info")
     | {{ $tr('No activity summary data found for the selected range.') }}
 
-  b-alert(v-else-if="filteredWindowEvents.length === 0" show variant="info")
+  b-alert(v-else-if="summaryWindowEvents.length === 0" show variant="info")
     | {{ $tr('No activity summary data matches the current filters.') }}
 
   div.row(v-else)
     div.col-12.mb-3
       div.fleet-session-summary-strip
-        div
-          div.text-muted.small {{ $tr('Active session time') }}
-          div.fleet-session-summary-value {{ activeSessionDurationLabel }}
+        div.fleet-session-summary-metrics
+          div.fleet-session-summary-metric
+            div.text-muted.small {{ $tr('Active session time') }}
+            div.fleet-session-summary-value {{ activeSessionDurationLabel }}
+          div.fleet-session-summary-metric(v-if="showNotAfkActiveSummary")
+            div.text-muted.small {{ $tr('Active after AFK subtraction') }}
+            div.fleet-session-summary-value.fleet-session-summary-value--secondary {{ notAfkActiveSessionDurationLabel }}
         div.fleet-session-summary-help.text-muted.small
-          | {{ $tr('AFK time is subtracted when available; overlapping active sessions across selected devices are counted once.') }}
+          | {{ activeSessionSummaryHelp }}
 
     div.col-12.mb-3
       div.fleet-summary-panel.fleet-summary-panel--timeline
@@ -175,6 +245,8 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
           show_colors
           horizontal
           show_apps
+          categorize_uncategorized_apps
+          @categorize-app="openFleetCategoryRuleModal"
         )
 
     div.col-md-6.col-xl-4.mb-3
@@ -272,6 +344,124 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
       :class="['fleet-chart-tooltip-line', 'fleet-chart-tooltip-line--' + line.type]"
     )
       span(v-if="line.type !== 'spacer'") {{ line.text }}
+
+  div.fleet-chart-detail-window(
+    v-if="timelineDetailWindow.visible"
+    :class="{ 'fleet-chart-detail-window--dark': activeTheme === 'dark' }"
+    :style="timelineDetailWindowStyle"
+  )
+    div.fleet-chart-detail-window__titlebar(
+      @mousedown="startTimelineDetailWindowDrag"
+      @touchstart="startTimelineDetailWindowDrag"
+    )
+      div
+        div.fleet-chart-detail-window__title {{ $tr('Timeline details') }}
+        div.fleet-chart-detail-window__subtitle(v-if="timelineDetailWindow.subtitle")
+          | {{ timelineDetailWindow.subtitle }}
+      button.fleet-chart-detail-window__close(
+        type="button"
+        :aria-label="$tr('Close')"
+        @click="closeTimelineDetailWindow"
+      ) X
+    div.fleet-chart-detail-window__body
+      div(
+        v-for="(line, index) in timelineDetailWindow.lines"
+        :key="index"
+        :class="['fleet-chart-tooltip-line', 'fleet-chart-tooltip-line--' + line.type]"
+      )
+        span(v-if="line.type !== 'spacer'") {{ line.text }}
+    div.fleet-chart-detail-window__resize-handle(
+      role="separator"
+      aria-orientation="both"
+      :aria-label="$tr('Resize window')"
+      :title="$tr('Resize window')"
+      @mousedown.stop.prevent="startTimelineDetailWindowResize"
+      @touchstart.stop.prevent="startTimelineDetailWindowResize"
+    )
+
+  b-modal(
+    id="fleet-category-rule-modal"
+    ref="fleetCategoryRuleModal"
+    :title="$tr('Categorize matching events')"
+    size="lg"
+    hide-footer
+  )
+    div(v-if="fleetCategoryRuleTarget")
+      b-alert(:show="!!fleetCategoryRuleMessage", variant="success")
+        | {{ fleetCategoryRuleMessage }}
+      b-alert(:show="!!fleetCategoryRuleDisplayError", variant="danger")
+        | {{ fleetCategoryRuleDisplayError }}
+      b-alert(:show="!!fleetCategoryRuleWarning", variant="warning")
+        | {{ fleetCategoryRuleWarning }}
+
+      div.mb-3
+        div.small.text-muted {{ $tr('Clicked uncategorized app') }}
+        div.fleet-category-rule-target
+          strong {{ fleetCategoryRuleTarget.app }}
+          span.ml-2.text-muted {{ formatFleetCategoryRuleDuration(fleetCategoryRuleTarget.duration || 0) }}
+
+      div.row
+        div.col-md-6
+          b-form-group(:label="$tr('Match from')")
+            b-form-select(
+              v-model="fleetCategoryRuleField"
+              :options="fleetCategoryRuleFieldOptions"
+              size="sm"
+            )
+        div.col-md-6
+          b-form-group(:label="$tr('Target')")
+            b-form-radio-group(
+              v-model="fleetCategoryRuleMode"
+              :options="fleetCategoryRuleModeOptions"
+              size="sm"
+              buttons
+              button-variant="outline-secondary"
+            )
+
+      div.mb-2(v-if="fleetCategoryRuleFieldValue")
+        small.text-muted {{ $tr('Field value') }}
+        code.fleet-category-rule-value {{ fleetCategoryRuleFieldValue }}
+
+      b-form-group(:label="$tr('Generated regex')")
+        b-form-input(
+          v-model.trim="fleetCategoryRulePattern"
+          :state="fleetCategoryRulePatternState"
+          size="sm"
+        )
+        b-form-invalid-feedback
+          | {{ $tr('Invalid pattern') }}
+        b-form-text.text-warning(v-if="fleetCategoryRuleBroadPattern")
+          | {{ $tr('Pattern too broad') }}
+
+      div.row
+        div.col-md-7(v-if="fleetCategoryRuleMode === 'append'")
+          b-form-group(:label="$tr('Existing category')")
+            b-form-select(
+              v-model="fleetCategoryRuleCategory"
+              :options="fleetAppendCategoryOptions"
+              size="sm"
+            )
+        div.col-md-7(v-else)
+          b-form-group(:label="$tr('New category path')")
+            b-form-input(
+              v-model.trim="fleetCategoryRuleNewPath"
+              :placeholder="$tr('Work > Project')"
+              size="sm"
+            )
+        div.col-md-5.d-flex.align-items-end
+          b-form-checkbox.mb-3(v-model="fleetCategoryRuleIgnoreCase")
+            | {{ $tr('Case insensitive') }}
+
+      div.d-flex.justify-content-end
+        b-button.mr-2(size="sm" variant="outline-secondary" @click="closeFleetCategoryRuleModal")
+          | {{ $tr('Cancel') }}
+        b-button(
+          size="sm"
+          variant="primary"
+          :disabled="!fleetCategoryRuleCanSave || fleetCategoryRuleSaving"
+          @click="saveFleetCategoryRule"
+        )
+          | {{ fleetCategoryRuleSaving ? $tr('Saving...') : $tr('Save category rule') }}
 </template>
 
 <script lang="ts">
@@ -291,9 +481,11 @@ import { getColorFromString } from '~/util/color';
 import { getBucketIdentity } from '~/util/bucketIdentity';
 import { seconds_to_duration } from '~/util/time';
 import { detectPreferredTheme } from '~/util/theme';
+import { isRegexBroad, validateRegex } from '~/util/validate';
 
 const CATEGORY_KEY_SEPARATOR = '>>>';
 const SYSTEM_METRIC_WATCHER_KEY_PREFIX = '__systemmetrics__::';
+const TIMELINE_TOOLTIP_HOVER_DELAY_MS = 3000;
 const UNKNOWN = 'Unknown';
 const BROWSER_APP_NAMES = new Set(
   [
@@ -364,6 +556,55 @@ const BROWSER_APP_TOKENS = [
   'floorp',
 ];
 const BROWSER_COPY_FIELDS = ['url', '$domain', 'audible', 'browser_title'];
+const DEFAULT_FLEET_ACTIVITY_SUMMARY_FILTER_STATE = {
+  subtractAfkTime: true,
+  countAudibleBrowserTime: true,
+  ignoreShortAfkPeriods: false,
+  shortAfkThresholdValue: null,
+  shortAfkThresholdUnit: 'seconds',
+  treatAfkDataGapsAsActive: false,
+  ignoredCategoryKeys: [],
+};
+
+function normalizeFleetActivitySummaryFilterState(value: Record<string, any> = {}) {
+  const state: Record<string, any> = {
+    ...DEFAULT_FLEET_ACTIVITY_SUMMARY_FILTER_STATE,
+  };
+
+  if (typeof value !== 'object' || value === null) {
+    return state;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(value, 'subtractAfkTime')) {
+    state.subtractAfkTime = Boolean(value.subtractAfkTime);
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'countAudibleBrowserTime')) {
+    state.countAudibleBrowserTime = Boolean(value.countAudibleBrowserTime);
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'ignoreShortAfkPeriods')) {
+    state.ignoreShortAfkPeriods = Boolean(value.ignoreShortAfkPeriods);
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'treatAfkDataGapsAsActive')) {
+    state.treatAfkDataGapsAsActive = Boolean(value.treatAfkDataGapsAsActive);
+  }
+  if (Array.isArray(value.ignoredCategoryKeys)) {
+    state.ignoredCategoryKeys = _.uniq(
+      value.ignoredCategoryKeys
+        .map(category => String(category || '').trim())
+        .filter(category => category !== '')
+    );
+  }
+  if (value.shortAfkThresholdUnit === 'minutes' || value.shortAfkThresholdUnit === 'seconds') {
+    state.shortAfkThresholdUnit = value.shortAfkThresholdUnit;
+  }
+
+  const thresholdValue = Number(value.shortAfkThresholdValue);
+  if (Number.isFinite(thresholdValue) && thresholdValue > 0) {
+    state.shortAfkThresholdValue = thresholdValue;
+  }
+
+  return state;
+}
 
 function hasIdentityValue(value: unknown): boolean {
   if (value === null || value === undefined) {
@@ -403,6 +644,9 @@ export default {
   },
   data() {
     const settingsStore = useSettingsStore();
+    const filterState = normalizeFleetActivitySummaryFilterState(
+      settingsStore.fleetActivitySummaryFilterStateData
+    );
     return {
       bucketsStore: useBucketsStore(),
       categoryStore: useCategoryStore(),
@@ -410,8 +654,14 @@ export default {
       loading: false,
       loadError: '',
       showFilters: false,
-      showAfkTime: settingsStore.fleetSummaryShowAfkTime,
-      countAudibleBrowserTime: !settingsStore.fleetSummaryIgnoreAudibleBrowserTime,
+      showAfkTime: !filterState.subtractAfkTime,
+      countAudibleBrowserTime: filterState.countAudibleBrowserTime,
+      ignoreShortAfkPeriods: filterState.ignoreShortAfkPeriods,
+      shortAfkThresholdValue: filterState.shortAfkThresholdValue,
+      shortAfkThresholdUnit: filterState.shortAfkThresholdUnit,
+      shortAfkThresholdUsesAutoDefault: filterState.shortAfkThresholdValue === null,
+      treatAfkDataGapsAsActive: filterState.treatAfkDataGapsAsActive,
+      ignoredCategoryKeys: [...filterState.ignoredCategoryKeys],
       textFilter: '',
       activeWindowEvents: [],
       rawTimelineBuckets: [],
@@ -423,9 +673,36 @@ export default {
         x: 12,
         y: 12,
         lines: [],
+        signature: '',
+      },
+      timelineDetailWindow: {
+        visible: false,
+        x: 96,
+        y: 96,
+        width: 0,
+        height: 0,
+        subtitle: '',
+        lines: [],
+      },
+      timelineDetailDrag: {
+        active: false,
+        offsetX: 0,
+        offsetY: 0,
+        width: 0,
+        height: 0,
+      },
+      timelineDetailResize: {
+        active: false,
+        startX: 0,
+        startY: 0,
+        startWidth: 0,
+        startHeight: 0,
       },
       timelineTooltipHovered: false,
       timelineTooltipHideTimer: null,
+      timelineTooltipShowTimer: null,
+      timelineTooltipPending: null,
+      fleetFilterStateSaveTimer: null,
       timelineAutoScrollTimer: null,
       timelineAutoScrollPending: false,
       timelineAutoScrollAttempts: 0,
@@ -449,6 +726,16 @@ export default {
         topCategories: false,
         sunburst: false,
       },
+      fleetCategoryRuleTarget: null,
+      fleetCategoryRuleMode: 'append',
+      fleetCategoryRuleField: 'app',
+      fleetCategoryRulePattern: '',
+      fleetCategoryRuleCategory: null,
+      fleetCategoryRuleNewPath: '',
+      fleetCategoryRuleIgnoreCase: true,
+      fleetCategoryRuleSaving: false,
+      fleetCategoryRuleMessage: '',
+      fleetCategoryRuleError: '',
     };
   },
   computed: {
@@ -493,6 +780,114 @@ export default {
     selectedDeviceSet() {
       return new Set(this.selectedDeviceIds);
     },
+    fleetCategoryRuleModeOptions() {
+      return [
+        { value: 'append', text: this.$tr('Existing category') },
+        { value: 'create', text: this.$tr('New category') },
+      ];
+    },
+    fleetCategoryRuleFieldOptions() {
+      const target = this.fleetCategoryRuleTarget || {};
+      const candidates = [
+        { key: 'app', value: target.app },
+        { key: 'process_name', value: target.process_name },
+      ].filter(item => String(item.value || '').trim() !== '');
+
+      return _.uniqBy(candidates, item => `${item.key}:${item.value}`).map(item => ({
+        value: item.key,
+        text: `${item.key}: ${this.truncateTimelineTooltipLabel(item.value, 72)}`,
+      }));
+    },
+    fleetCategoryRuleFieldValue() {
+      const target = this.fleetCategoryRuleTarget || {};
+      return String(target[this.fleetCategoryRuleField] || target.app || '').trim();
+    },
+    fleetCategoryRulePatternState() {
+      if (!this.fleetCategoryRulePattern) {
+        return null;
+      }
+      return validateRegex(this.fleetCategoryRulePattern);
+    },
+    fleetCategoryRuleBroadPattern() {
+      return this.fleetCategoryRulePatternState && isRegexBroad(this.fleetCategoryRulePattern);
+    },
+    fleetCategoryRuleNewParts() {
+      return String(this.fleetCategoryRuleNewPath || '')
+        .split('>')
+        .map(part => part.trim())
+        .filter(part => part.length > 0);
+    },
+    fleetCategoryRuleNewExists() {
+      if (this.fleetCategoryRuleMode !== 'create' || this.fleetCategoryRuleNewParts.length === 0) {
+        return false;
+      }
+      return this.categoryStore.classes.some(category =>
+        _.isEqual(category.name, this.fleetCategoryRuleNewParts)
+      );
+    },
+    fleetAppendCategoryOptions() {
+      return [
+        { value: null, text: this.$tr('Choose category'), disabled: true },
+        ...this.categoryStore.category_select(false).filter(option => {
+          return option.value && !_.isEqual(option.value, ['Uncategorized']);
+        }),
+      ];
+    },
+    selectedFleetCategoryRuleCategory() {
+      if (!this.fleetCategoryRuleCategory) {
+        return null;
+      }
+      return this.categoryStore.classes.find(category =>
+        _.isEqual(category.name, this.fleetCategoryRuleCategory)
+      );
+    },
+    fleetCategoryRuleAppendCompatibilityError() {
+      const category = this.selectedFleetCategoryRuleCategory;
+      if (!category || category.rule?.type !== 'regex') {
+        return '';
+      }
+      const selectKeys = category.rule.select_keys || [];
+      if (selectKeys.length > 0 && !selectKeys.includes(this.fleetCategoryRuleField)) {
+        return this.$tr(
+          'Selected category only matches other fields. Choose a compatible field or create a new category.'
+        );
+      }
+      return '';
+    },
+    fleetCategoryRuleDisplayError() {
+      return this.fleetCategoryRuleError || this.fleetCategoryRuleAppendCompatibilityError;
+    },
+    fleetCategoryRuleWarning() {
+      const category = this.selectedFleetCategoryRuleCategory;
+      if (this.fleetCategoryRuleAppendCompatibilityError) {
+        return '';
+      }
+      if (
+        this.fleetCategoryRuleMode === 'append' &&
+        category?.rule?.type === 'regex' &&
+        !(category.rule.select_keys || []).length
+      ) {
+        return this.$tr(
+          'Existing category has no field scope; the new pattern can match any categorized field.'
+        );
+      }
+      if (this.fleetCategoryRuleNewExists) {
+        return this.$tr('Category already exists');
+      }
+      return '';
+    },
+    fleetCategoryRuleCanSave() {
+      if (!this.fleetCategoryRuleTarget || !validateRegex(this.fleetCategoryRulePattern || '')) {
+        return false;
+      }
+      if (this.fleetCategoryRuleAppendCompatibilityError || this.fleetCategoryRuleNewExists) {
+        return false;
+      }
+      if (this.fleetCategoryRuleMode === 'append') {
+        return !!this.selectedFleetCategoryRuleCategory;
+      }
+      return this.fleetCategoryRuleNewParts.length > 0;
+    },
     subtractAfkTime: {
       get() {
         return !this.showAfkTime;
@@ -509,7 +904,53 @@ export default {
         this.selectedDeviceIds.join('|'),
         this.showAfkTime ? 'show-afk' : 'exclude-afk',
         this.countAudibleBrowserTime ? 'audible-active' : 'audible-ignored',
+        this.shouldIgnoreShortAfkPeriods
+          ? `ignore-short-afk-${this.shortAfkThresholdSeconds}`
+          : 'count-short-afk',
+        this.shouldTreatAfkDataGapsAsActive ? 'afk-gaps-active' : 'afk-gaps-unknown',
       ].join('::');
+    },
+    ignoredCategoryKeySet() {
+      return new Set(
+        (this.ignoredCategoryKeys || [])
+          .map(category => String(category || '').trim())
+          .filter(category => category !== '')
+      );
+    },
+    shortAfkThresholdUnitOptions() {
+      return [
+        { value: 'seconds', text: this.$tr('seconds') },
+        { value: 'minutes', text: this.$tr('minutes') },
+      ];
+    },
+    shortAfkThresholdSeconds() {
+      const value = Number(this.shortAfkThresholdValue || 0);
+      if (!Number.isFinite(value) || value <= 0) {
+        return 0;
+      }
+      const multiplier = this.shortAfkThresholdUnit === 'minutes' ? 60 : 1;
+      return Math.round(value * multiplier);
+    },
+    shouldIgnoreShortAfkPeriods() {
+      return (
+        this.subtractAfkTime && this.ignoreShortAfkPeriods && this.shortAfkThresholdSeconds > 0
+      );
+    },
+    ignoredShortAfkIntervalsBySession() {
+      return this.buildIgnoredShortAfkIntervalsBySession(this.rawTimelineBuckets);
+    },
+    maxActiveSessionAfkPeriodSeconds() {
+      return this.findMaxActiveSessionAfkPeriodSeconds(this.rawTimelineBuckets);
+    },
+    maxActiveSessionAfkPeriodLabel() {
+      const seconds = Number(this.maxActiveSessionAfkPeriodSeconds || 0);
+      return seconds > 0 ? this.formatMinutesSeconds(seconds) : '';
+    },
+    shouldTreatAfkDataGapsAsActive() {
+      return this.subtractAfkTime && this.treatAfkDataGapsAsActive;
+    },
+    afkDataGapIntervalsBySession() {
+      return this.buildAfkDataGapIntervalsBySession(this.rawTimelineBuckets);
     },
     normalizedTextFilter() {
       return String(this.textFilter || '')
@@ -520,8 +961,14 @@ export default {
       return (
         (!this.subtractAfkTime ? 1 : 0) +
         (this.subtractAfkTime && !this.countAudibleBrowserTime ? 1 : 0) +
+        (this.shouldIgnoreShortAfkPeriods ? 1 : 0) +
+        (this.shouldTreatAfkDataGapsAsActive ? 1 : 0) +
+        (this.ignoredCategoryKeySet.size > 0 ? 1 : 0) +
         (this.normalizedTextFilter ? 1 : 0)
       );
+    },
+    countedWindowEventCount() {
+      return this.summaryWindowEvents.length;
     },
     filteredWindowEvents() {
       if (!this.normalizedTextFilter) {
@@ -546,7 +993,7 @@ export default {
         })
       );
     },
-    categorizedWindowEvents() {
+    classifiedWindowEvents() {
       if (!this.categoryStore.classes || this.categoryStore.classes.length === 0) {
         return [];
       }
@@ -563,8 +1010,34 @@ export default {
         return event;
       });
     },
+    ignoredCategoryOptions() {
+      const categoryKeys = new Set();
+      for (const event of this.classifiedWindowEvents) {
+        categoryKeys.add(categoryKey(event.data.$category || ['Uncategorized']));
+      }
+      for (const key of this.ignoredCategoryKeySet) {
+        categoryKeys.add(key);
+      }
+
+      return _.orderBy(
+        Array.from(categoryKeys).map(key => ({
+          value: key,
+          text: this.formatCategoryKeyLabel(key),
+        })),
+        [option => String(option.text || '').toLowerCase()],
+        ['asc']
+      );
+    },
+    categorizedWindowEvents() {
+      if (this.ignoredCategoryKeySet.size === 0) {
+        return this.classifiedWindowEvents;
+      }
+      return this.classifiedWindowEvents.filter(
+        event => !this.isIgnoredCategory(event.data.$category)
+      );
+    },
     summaryWindowEvents() {
-      if (this.categorizedWindowEvents.length > 0 || this.filteredWindowEvents.length === 0) {
+      if (this.categoryStore.classes && this.categoryStore.classes.length > 0) {
         return this.categorizedWindowEvents;
       }
       return this.filteredWindowEvents;
@@ -827,6 +1300,15 @@ export default {
       });
       return totals.map(value => Math.round(value));
     },
+    timelineNotAfkActiveSessionSecondsByBin() {
+      const totals = Array.from({ length: this.timelineBins.length }, () => 0);
+      (this.notAfkActiveSessionIntervals || []).forEach(interval => {
+        this.timelineBins.forEach((bin, index) => {
+          totals[index] += this.overlapSeconds(interval.start, interval.end, bin.start, bin.end);
+        });
+      });
+      return totals.map(value => Math.round(value));
+    },
     timelineBinTotals() {
       const totals = Array.from({ length: this.timelineBins.length }, () => 0);
       (this.timelineDatasets || []).forEach((dataset: any) => {
@@ -843,6 +1325,7 @@ export default {
     timelineChartPlugins() {
       return [
         this.timelineAfkOverlayPlugin,
+        this.timelineBarValueLabelPlugin,
         this.timelineAxisTooltipPlugin,
         this.timelineChartAreaPlugin,
       ];
@@ -853,15 +1336,23 @@ export default {
         datasets: this.timelineDatasets,
       };
     },
-    activeSessionDurationLabel() {
-      const seconds =
-        this.localNotAfkActiveSessionSeconds ??
-        this.user?.totals?.not_afk_active_seconds ??
-        this.user?.totals?.active_seconds ??
-        0;
-      return seconds_to_duration(Number(seconds || 0));
+    localActiveSessionSeconds() {
+      if (!this.rawTimelineBuckets || this.rawTimelineBuckets.length === 0) {
+        return null;
+      }
+      return _.sum(
+        this.activeSessionIntervals.map(interval =>
+          interval.end.diff(interval.start, 'seconds', true)
+        )
+      );
     },
-    localNotAfkActiveSessionSeconds() {
+    activeSessionSeconds() {
+      return this.localActiveSessionSeconds ?? this.user?.totals?.active_seconds ?? 0;
+    },
+    activeSessionDurationLabel() {
+      return seconds_to_duration(Number(this.activeSessionSeconds || 0));
+    },
+    notAfkActiveSessionIntervals() {
       if (!this.rawTimelineBuckets || this.rawTimelineBuckets.length === 0) {
         return null;
       }
@@ -876,7 +1367,7 @@ export default {
         'active'
       );
       if (sessionActiveIntervals.size === 0) {
-        return null;
+        return [];
       }
 
       const intervals = [];
@@ -892,10 +1383,34 @@ export default {
         }
       }
 
-      return _.sum(
-        this.mergeIntervals(intervals).map(interval =>
-          interval.end.diff(interval.start, 'seconds', true)
-        )
+      return this.mergeIntervals(intervals);
+    },
+    localNotAfkActiveSessionSeconds() {
+      const intervals = this.notAfkActiveSessionIntervals;
+      if (intervals === null) {
+        return null;
+      }
+      return _.sum(intervals.map(interval => interval.end.diff(interval.start, 'seconds', true)));
+    },
+    notAfkActiveSessionSeconds() {
+      return (
+        this.localNotAfkActiveSessionSeconds ?? this.user?.totals?.not_afk_active_seconds ?? null
+      );
+    },
+    notAfkActiveSessionDurationLabel() {
+      return seconds_to_duration(Number(this.notAfkActiveSessionSeconds || 0));
+    },
+    showNotAfkActiveSummary() {
+      return this.subtractAfkTime && this.notAfkActiveSessionSeconds !== null;
+    },
+    activeSessionSummaryHelp() {
+      if (this.subtractAfkTime) {
+        return this.$tr(
+          'Raw active session time is shown first; after-AFK active time follows when AFK data exists. Overlapping active sessions across selected devices are counted once.'
+        );
+      }
+      return this.$tr(
+        'AFK time is not subtracted; overlapping active sessions across selected devices are counted once.'
       );
     },
     dailyTimelineInterval() {
@@ -1023,6 +1538,11 @@ export default {
         this.selectedDeviceIds.join('|'),
         this.dailyTimelineSwimlane || 'none',
         this.selectedDailyWatcherKeys.join('|'),
+        this.shouldIgnoreShortAfkPeriods
+          ? `ignore-short-afk-${this.shortAfkThresholdSeconds}`
+          : 'count-short-afk',
+        this.shouldTreatAfkDataGapsAsActive ? 'afk-gaps-active' : 'afk-gaps-unknown',
+        Array.from(this.ignoredCategoryKeySet).join('|'),
         this.panelRefreshKeys.dailyTimeline,
       ].join('::');
     },
@@ -1126,14 +1646,27 @@ export default {
         top: `${this.timelineTooltip.y}px`,
       };
     },
+    timelineDetailWindowStyle() {
+      return {
+        left: `${this.timelineDetailWindow.x}px`,
+        top: `${this.timelineDetailWindow.y}px`,
+        width:
+          Number(this.timelineDetailWindow.width || 0) > 0
+            ? `${this.timelineDetailWindow.width}px`
+            : undefined,
+        height:
+          Number(this.timelineDetailWindow.height || 0) > 0
+            ? `${this.timelineDetailWindow.height}px`
+            : undefined,
+      };
+    },
     timelineChartOptions(): ChartOptions {
       const formatDuration = value => seconds_to_duration(Number(value || 0) * 3600);
       const afkData = this.timelineAfkData;
       const afkLabel = this.$tr('AFK time');
-      const totalTimeLabel = this.$tr('Total time');
-      const activeSessionTimeLabel = this.$tr('Active session time');
       const collectedDeviceTimeLabel = this.$tr('Collected device time');
-      const activeSessionSecondsByBin = this.timelineActiveSessionSecondsByBin;
+      const barTotalSummaryLines = this.timelineBarTotalSummaryLines.bind(this);
+      const activeSummaryLines = this.timelineActiveSummaryLines.bind(this);
       const formatTooltipDetail = this.formatTimelineTooltipDetail.bind(this);
       const formatAxisTooltipDetail = this.formatTimelineAxisTooltipDetail.bind(this);
       const plugins: any = {
@@ -1147,8 +1680,7 @@ export default {
           callbacks: {
             beforeTitle(items) {
               const index = items?.[0]?.dataIndex;
-              const seconds = Number(activeSessionSecondsByBin?.[index] || 0);
-              return `${activeSessionTimeLabel}: ${seconds_to_duration(seconds)}`;
+              return [...barTotalSummaryLines(index), ...activeSummaryLines(index)];
             },
             label(context) {
               const dataset: any = context.dataset;
@@ -1180,7 +1712,7 @@ export default {
                 return Number(values[index] || 0);
               });
               const afkHours = Number(afkData?.[index] || 0);
-              const lines = [`${totalTimeLabel}: ${formatDuration(totalHours)}`];
+              const lines = [];
               if (afkHours > 0) {
                 lines.push(`${afkLabel}: ${formatDuration(afkHours)}`);
               }
@@ -1196,11 +1728,28 @@ export default {
           afkData,
           color: this.settingsStore.afkOverlayColor || '#ff4d4f',
         },
+        fleetTimelineBarValueLabels: {
+          values: this.timelineBinTotals,
+          labels: this.timelineBinTotals.map(value => this.formatTimelineBarValueLabel(value)),
+          color: this.chartTextColor,
+          backgroundColor:
+            this.activeTheme === 'dark' ? 'rgba(16, 21, 31, 0.92)' : 'rgba(247, 248, 251, 0.94)',
+          borderColor:
+            this.activeTheme === 'dark' ? 'rgba(233, 235, 240, 0.22)' : 'rgba(22, 30, 48, 0.18)',
+        },
       };
 
       return {
         responsive: true,
         maintainAspectRatio: false,
+        layout: {
+          padding: {
+            top: 28,
+          },
+        },
+        onClick: (event, elements, chart) => {
+          this.handleTimelineChartClick(chart, event, elements);
+        },
         plugins,
         scales: {
           x: {
@@ -1289,6 +1838,76 @@ export default {
         },
       };
     },
+    timelineBarValueLabelPlugin() {
+      return {
+        id: 'fleetTimelineBarValueLabels',
+        afterDatasetsDraw: (chart, _args, pluginOptions: any) => {
+          const values = Array.isArray(pluginOptions?.values) ? pluginOptions.values : [];
+          const labels = Array.isArray(pluginOptions?.labels) ? pluginOptions.labels : [];
+          const { ctx, chartArea } = chart;
+          const yScale = chart.scales?.y;
+          if (!ctx || !chartArea || !yScale || values.length === 0) {
+            return;
+          }
+
+          const barMetas = chart.getSortedVisibleDatasetMetas().filter(meta => meta.type === 'bar');
+          if (barMetas.length === 0) {
+            return;
+          }
+
+          ctx.save();
+          ctx.font =
+            '600 11px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          values.forEach((value, index) => {
+            const totalHours = Number(value || 0);
+            const label = String(labels[index] || '');
+            if (totalHours <= 0 || !label) {
+              return;
+            }
+
+            const sampleBar = barMetas
+              .map(meta => meta.data?.[index])
+              .find(element => element && !element.hidden);
+            if (!sampleBar || Number(sampleBar.width || 0) < 10) {
+              return;
+            }
+
+            const x = Number(sampleBar.x);
+            const totalY = Number(yScale.getPixelForValue(totalHours));
+            if (!Number.isFinite(x) || !Number.isFinite(totalY)) {
+              return;
+            }
+
+            const paddingX = 4;
+            const height = 16;
+            const width = Math.ceil(ctx.measureText(label).width + paddingX * 2);
+            const safeX = Math.max(
+              chartArea.left + width / 2,
+              Math.min(x, chartArea.right - width / 2)
+            );
+            const labelTop = Math.max(2, totalY - height - 6);
+            const left = safeX - width / 2;
+
+            this.drawTimelineLabelPill(
+              ctx,
+              left,
+              labelTop,
+              width,
+              height,
+              pluginOptions?.backgroundColor || 'rgba(247, 248, 251, 0.94)',
+              pluginOptions?.borderColor || 'rgba(22, 30, 48, 0.18)'
+            );
+            ctx.fillStyle = pluginOptions?.color || '#18202f';
+            ctx.fillText(label, safeX, labelTop + height / 2);
+          });
+
+          ctx.restore();
+        },
+      };
+    },
     timelineAxisTooltipPlugin() {
       return {
         id: 'fleetTimelineAxisTooltip',
@@ -1349,14 +1968,226 @@ export default {
         this.scheduleTimelineAutoScroll();
       }
     },
+    maxActiveSessionAfkPeriodSeconds: {
+      immediate: true,
+      handler() {
+        if (this.shortAfkThresholdUsesAutoDefault) {
+          this.syncShortAfkThresholdDefaultToMax();
+        }
+      },
+    },
+    fleetCategoryRuleField() {
+      this.fleetCategoryRulePattern = this.generatedFleetCategoryRulePattern();
+      this.fleetCategoryRuleMessage = '';
+      this.fleetCategoryRuleError = '';
+    },
+    fleetCategoryRuleMode() {
+      this.fleetCategoryRuleMessage = '';
+      this.fleetCategoryRuleError = '';
+    },
   },
   beforeDestroy() {
     this.clearTimelineTooltipHideTimer();
+    this.clearTimelineTooltipShowTimer();
+    this.flushFleetFilterStateSave();
     this.clearTimelineAutoScrollTimer();
+    this.stopTimelineDetailWindowDrag();
+    this.stopTimelineDetailWindowResize();
   },
   methods: {
     noop() {
       return undefined;
+    },
+    syncShortAfkThresholdDefaultToMax() {
+      const input = this.shortAfkThresholdInputForSeconds(this.maxActiveSessionAfkPeriodSeconds);
+      if (this.shortAfkThresholdUnit !== input.unit) {
+        this.shortAfkThresholdUnit = input.unit;
+      }
+      if (this.shortAfkThresholdValue !== input.value) {
+        this.shortAfkThresholdValue = input.value;
+      }
+    },
+    shortAfkThresholdInputForSeconds(seconds) {
+      const totalSeconds = Math.ceil(Math.max(0, Number(seconds || 0)));
+      if (totalSeconds <= 0) {
+        return { value: null, unit: 'seconds' };
+      }
+      if (totalSeconds >= 60 && totalSeconds % 60 === 0) {
+        return { value: totalSeconds / 60, unit: 'minutes' };
+      }
+      return { value: totalSeconds, unit: 'seconds' };
+    },
+    currentFleetActivitySummaryFilterState() {
+      const thresholdValue = Number(this.shortAfkThresholdValue || 0);
+      return {
+        subtractAfkTime: this.subtractAfkTime,
+        countAudibleBrowserTime: this.countAudibleBrowserTime,
+        ignoreShortAfkPeriods: this.ignoreShortAfkPeriods,
+        shortAfkThresholdValue:
+          Number.isFinite(thresholdValue) && thresholdValue > 0 ? thresholdValue : null,
+        shortAfkThresholdUnit: this.shortAfkThresholdUnit === 'minutes' ? 'minutes' : 'seconds',
+        treatAfkDataGapsAsActive: this.treatAfkDataGapsAsActive,
+        ignoredCategoryKeys: Array.from(this.ignoredCategoryKeySet),
+      };
+    },
+    queueFleetActivitySummaryFilterStateSave() {
+      this.shortAfkThresholdUsesAutoDefault = false;
+      this.clearFleetFilterStateSaveTimer();
+      this.fleetFilterStateSaveTimer = window.setTimeout(() => {
+        this.fleetFilterStateSaveTimer = null;
+        this.saveFleetActivitySummaryFilterState();
+      }, 300);
+    },
+    async saveFleetActivitySummaryFilterState() {
+      const nextState = this.currentFleetActivitySummaryFilterState();
+      const savedState = normalizeFleetActivitySummaryFilterState(
+        this.settingsStore.fleetActivitySummaryFilterStateData
+      );
+      if (_.isEqual(nextState, savedState)) {
+        return;
+      }
+
+      try {
+        await this.settingsStore.update({
+          fleetActivitySummaryFilterStateData: nextState,
+        });
+      } catch (error) {
+        console.error('Unable to save Fleet activity summary filter state', error);
+      }
+    },
+    clearIgnoredCategories() {
+      if (this.ignoredCategoryKeys.length === 0) {
+        return;
+      }
+      this.ignoredCategoryKeys = [];
+      this.queueFleetActivitySummaryFilterStateSave();
+    },
+    openFleetCategoryRuleModal(target) {
+      if (!target?.is_app_detail || !_.isEqual(target.category || [], ['Uncategorized'])) {
+        return;
+      }
+      if (!this.categoryStore.classes || this.categoryStore.classes.length === 0) {
+        this.categoryStore.load();
+      }
+
+      const app = String(target.app || target.subname || '').trim();
+      const processName = String(target.process_name || app).trim();
+      this.fleetCategoryRuleTarget = {
+        ...target,
+        app,
+        process_name: processName,
+      };
+      this.fleetCategoryRuleMode = 'append';
+      this.fleetCategoryRuleField = app ? 'app' : 'process_name';
+      this.fleetCategoryRulePattern = this.generatedFleetCategoryRulePattern();
+      this.fleetCategoryRuleCategory = null;
+      this.fleetCategoryRuleNewPath = this.suggestFleetCategoryPath(app || processName);
+      this.fleetCategoryRuleIgnoreCase = true;
+      this.fleetCategoryRuleSaving = false;
+      this.fleetCategoryRuleMessage = '';
+      this.fleetCategoryRuleError = '';
+
+      this.$nextTick(() => {
+        this.$refs.fleetCategoryRuleModal?.show?.();
+      });
+    },
+    closeFleetCategoryRuleModal() {
+      this.$refs.fleetCategoryRuleModal?.hide?.();
+    },
+    generatedFleetCategoryRulePattern() {
+      const value = this.fleetCategoryRuleFieldValue;
+      return value ? _.escapeRegExp(value) : '';
+    },
+    suggestFleetCategoryPath(value) {
+      const text = String(value || '')
+        .replace(/\.exe$/i, '')
+        .replace(/[-_]+/g, ' ')
+        .trim();
+      if (!text) {
+        return '';
+      }
+      return text
+        .split(/\s+/)
+        .map(part => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+        .join(' ');
+    },
+    buildFleetCategoryRule() {
+      const rule: any = {
+        type: 'regex',
+        regex: this.fleetCategoryRulePattern,
+        ignore_case: this.fleetCategoryRuleIgnoreCase,
+      };
+      if (this.fleetCategoryRuleField) {
+        rule.select_keys = [this.fleetCategoryRuleField];
+      }
+      return rule;
+    },
+    async saveFleetCategoryRule() {
+      if (!this.fleetCategoryRuleCanSave) {
+        return;
+      }
+
+      this.fleetCategoryRuleSaving = true;
+      this.fleetCategoryRuleMessage = '';
+      this.fleetCategoryRuleError = '';
+
+      try {
+        if (this.fleetCategoryRuleMode === 'create') {
+          this.categoryStore.addClass({
+            name: this.fleetCategoryRuleNewParts,
+            rule: this.buildFleetCategoryRule(),
+          });
+        } else {
+          const category = this.selectedFleetCategoryRuleCategory;
+          if (!category) {
+            throw new Error(this.$tr('Choose category'));
+          }
+          const rule = category.rule || { type: 'none' };
+          if (rule.type === 'none' || rule.type === null) {
+            category.rule = this.buildFleetCategoryRule();
+          } else if (rule.type === 'regex') {
+            category.rule.regex = `${rule.regex || ''}|${this.fleetCategoryRulePattern}`;
+            if (rule.ignore_case === undefined) {
+              category.rule.ignore_case = this.fleetCategoryRuleIgnoreCase;
+            }
+          }
+          this.categoryStore.classes_unsaved_changes = true;
+        }
+
+        await this.categoryStore.save();
+        this.categoryStore.load();
+        this.fleetCategoryRuleMessage = this.$tr('Category rule saved');
+        [
+          'timeline',
+          'dailyTimeline',
+          'categoryTree',
+          'topApps',
+          'topTitles',
+          'topCategories',
+          'sunburst',
+        ].forEach(panelKey => this.bumpPanelRefreshKey(panelKey));
+        this.$nextTick(() => {
+          this.closeFleetCategoryRuleModal();
+        });
+      } catch (error) {
+        this.fleetCategoryRuleError = error?.message || String(error);
+      } finally {
+        this.fleetCategoryRuleSaving = false;
+      }
+    },
+    clearFleetFilterStateSaveTimer() {
+      if (this.fleetFilterStateSaveTimer) {
+        window.clearTimeout(this.fleetFilterStateSaveTimer);
+        this.fleetFilterStateSaveTimer = null;
+      }
+    },
+    flushFleetFilterStateSave() {
+      if (!this.fleetFilterStateSaveTimer) {
+        return;
+      }
+
+      this.clearFleetFilterStateSaveTimer();
+      this.saveFleetActivitySummaryFilterState();
     },
     requestTimelineAutoScroll() {
       this.timelineAutoScrollPending = true;
@@ -1482,6 +2313,8 @@ export default {
       if (!this.user || !this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
         return false;
       }
+
+      this.closeTimelineDetailWindow();
 
       const showGlobalLoading = options.showGlobalLoading !== false;
       const requestKey = this.reloadKey;
@@ -1636,6 +2469,10 @@ export default {
     },
     buildDailyTimelineBucket(bucket) {
       const events = [];
+      const ignoredShortAfkIntervalsBySession =
+        bucket?.type === 'afkstatus' ? this.ignoredShortAfkIntervalsBySession : null;
+      const afkDataGapIntervalsBySession =
+        bucket?.type === 'afkstatus' ? this.afkDataGapIntervalsBySession : null;
 
       for (const event of bucket.events || []) {
         const identity = this.eventIdentity(bucket, event);
@@ -1648,18 +2485,64 @@ export default {
           continue;
         }
 
-        events.push({
+        let data = event.data || {};
+        if (
+          this.isIgnoredShortAfkDisplayEvent(
+            bucket,
+            event,
+            identity,
+            ignoredShortAfkIntervalsBySession
+          )
+        ) {
+          data = {
+            ...data,
+            status: 'not-afk',
+            $ignoredShortAfk: true,
+          };
+        }
+
+        let timelineEvent = {
           ...event,
           timestamp: interval.start.format(),
           duration: interval.end.diff(interval.start, 'seconds', true),
-        });
+          data,
+        };
+        timelineEvent = this.withDailyTimelineCategory(bucket, timelineEvent);
+        if (this.isIgnoredDailyTimelineCategory(bucket, timelineEvent)) {
+          continue;
+        }
+
+        events.push(timelineEvent);
       }
+      this.addAfkDataGapDisplayEvents(bucket, events, afkDataGapIntervalsBySession);
 
       return {
         ...bucket,
         display_name: this.buildDailyTimelineBucketLabel(bucket),
-        events,
+        events: _.sortBy(events, event => moment(event.timestamp).valueOf()),
       };
+    },
+    withDailyTimelineCategory(bucket, event) {
+      if (!this.isWindowBucket(bucket) || !this.categoryStore.classes?.length) {
+        return event;
+      }
+
+      const classified =
+        classifyEvents([_.cloneDeep(event)], this.categoryStore.classes)[0] || event;
+      const category = classified.data?.$category || ['Uncategorized'];
+      return {
+        ...event,
+        data: {
+          ...(event.data || {}),
+          ...(classified.data || {}),
+          $category: category,
+          $color: this.categoryStore.get_category_color(category),
+          $score: this.categoryStore.get_category_score(category),
+        },
+      };
+    },
+    isIgnoredDailyTimelineCategory(bucket, event) {
+      return this.isWindowBucket(bucket) && this.isIgnoredCategory(event.data?.$category);
     },
     buildDailyTimelineBucketLabel(bucket) {
       const identity = this.bucketIdentity(bucket);
@@ -1815,6 +2698,9 @@ export default {
     buildActiveIntervalsBySession(buckets, browserEvents = []) {
       const intervalsBySession = new Map();
       const sessionsWithAfkData = new Set();
+      const ignoredShortAfkIntervalsBySession =
+        this.buildIgnoredShortAfkIntervalsBySession(buckets);
+      const afkDataGapIntervalsBySession = this.buildAfkDataGapIntervalsBySession(buckets);
 
       for (const bucket of buckets || []) {
         if (bucket?.type !== 'afkstatus') {
@@ -1843,6 +2729,18 @@ export default {
         }
       }
 
+      for (const [key, intervals] of ignoredShortAfkIntervalsBySession.entries()) {
+        const activeIntervals = intervalsBySession.get(key) || [];
+        activeIntervals.push(...intervals);
+        intervalsBySession.set(key, activeIntervals);
+      }
+
+      for (const [key, intervals] of afkDataGapIntervalsBySession.entries()) {
+        const activeIntervals = intervalsBySession.get(key) || [];
+        activeIntervals.push(...intervals);
+        intervalsBySession.set(key, activeIntervals);
+      }
+
       if (this.countAudibleBrowserTime) {
         this.addAudibleBrowserIntervalsToSessions(
           buckets,
@@ -1857,6 +2755,280 @@ export default {
       }
 
       return { intervalsBySession, sessionsWithAfkData };
+    },
+    buildIgnoredShortAfkIntervalsBySession(buckets) {
+      if (!this.shouldIgnoreShortAfkPeriods) {
+        return new Map();
+      }
+
+      const thresholdSeconds = Number(this.shortAfkThresholdSeconds || 0);
+      if (thresholdSeconds <= 0) {
+        return new Map();
+      }
+
+      const intervalsBySession = new Map();
+      for (const [key, runs] of this.buildGroupedAfkRunsBySession(buckets).entries()) {
+        const ignoredIntervals = [];
+        runs.forEach(run => {
+          if (!run.followedByNotAfk || run.durationSeconds > thresholdSeconds) {
+            return;
+          }
+          ignoredIntervals.push(...run.clippedIntervals);
+        });
+
+        if (ignoredIntervals.length > 0) {
+          intervalsBySession.set(key, this.mergeIntervals(ignoredIntervals));
+        }
+      }
+
+      return intervalsBySession;
+    },
+    buildAfkStatusEventsBySession(buckets) {
+      const eventsBySession = new Map();
+      for (const bucket of buckets || []) {
+        if (bucket?.type !== 'afkstatus') {
+          continue;
+        }
+
+        for (const event of bucket.events || []) {
+          const identity = this.eventIdentity(bucket, event);
+          if (!this.matchesIdentity(identity)) {
+            continue;
+          }
+
+          const afkStatus = String((event.data || {}).status || '').toLowerCase();
+          if (afkStatus !== 'afk' && afkStatus !== 'not-afk') {
+            continue;
+          }
+
+          const start = moment(event.timestamp);
+          const duration = Number(event.duration || 0);
+          const end = start.clone().add(duration, 'seconds');
+          if (!start.isValid() || !end.isValid() || !end.isAfter(start)) {
+            continue;
+          }
+
+          const key = this.sessionKey(identity);
+          const events = eventsBySession.get(key) || [];
+          events.push({
+            status: afkStatus,
+            start,
+            end,
+            interval: this.clipEventInterval(event),
+          });
+          eventsBySession.set(key, events);
+        }
+      }
+
+      return eventsBySession;
+    },
+    buildGroupedAfkRunsBySession(buckets) {
+      const runsBySession = new Map();
+      for (const [key, events] of this.buildAfkStatusEventsBySession(buckets).entries()) {
+        const sortedEvents = _.sortBy(events, [
+          event => event.start.valueOf(),
+          event => (event.status === 'afk' ? 0 : 1),
+          event => event.end.valueOf(),
+        ]);
+        const runs = [];
+        let afkRun = [];
+
+        const flushAfkRun = nextEvent => {
+          if (afkRun.length === 0) {
+            return;
+          }
+
+          const intervals = this.mergeIntervals(
+            afkRun.map(event => ({ start: event.start, end: event.end }))
+          );
+          const clippedIntervals = this.mergeIntervals(
+            afkRun.map(event => event.interval).filter(interval => interval)
+          );
+          const durationSeconds = _.sum(
+            intervals.map(interval => interval.end.diff(interval.start, 'seconds', true))
+          );
+
+          runs.push({
+            durationSeconds,
+            intervals,
+            clippedIntervals,
+            followedByNotAfk: nextEvent?.status === 'not-afk',
+          });
+          afkRun = [];
+        };
+
+        sortedEvents.forEach(event => {
+          if (event.status === 'afk') {
+            afkRun.push(event);
+            return;
+          }
+
+          flushAfkRun(event);
+        });
+        flushAfkRun(null);
+
+        if (runs.length > 0) {
+          runsBySession.set(key, runs);
+        }
+      }
+
+      return runsBySession;
+    },
+    findMaxActiveSessionAfkPeriodSeconds(buckets) {
+      const activeIntervalsBySession = this.buildSessionStateIntervalsBySession(buckets, 'active');
+      if (activeIntervalsBySession.size === 0) {
+        return 0;
+      }
+
+      let maxSeconds = 0;
+      for (const [key, runs] of this.buildGroupedAfkRunsBySession(buckets).entries()) {
+        const activeIntervals = activeIntervalsBySession.get(key) || [];
+        if (activeIntervals.length === 0) {
+          continue;
+        }
+
+        runs.forEach(run => {
+          const activeSeconds = _.sum(
+            run.clippedIntervals.map(interval => {
+              return _.sum(
+                activeIntervals.map(activeInterval =>
+                  this.overlapSeconds(
+                    interval.start,
+                    interval.end,
+                    activeInterval.start,
+                    activeInterval.end
+                  )
+                )
+              );
+            })
+          );
+          maxSeconds = Math.max(maxSeconds, activeSeconds);
+        });
+      }
+
+      return maxSeconds;
+    },
+    buildAfkDataGapIntervalsBySession(buckets) {
+      if (!this.shouldTreatAfkDataGapsAsActive) {
+        return new Map();
+      }
+
+      const activeIntervalsBySession = this.buildSessionStateIntervalsBySession(buckets, 'active');
+      if (activeIntervalsBySession.size === 0) {
+        return new Map();
+      }
+
+      const coverageIntervalsBySession = new Map();
+      for (const bucket of buckets || []) {
+        if (bucket?.type !== 'afkstatus') {
+          continue;
+        }
+
+        for (const event of bucket.events || []) {
+          const identity = this.eventIdentity(bucket, event);
+          if (!this.matchesIdentity(identity)) {
+            continue;
+          }
+
+          const afkStatus = String((event.data || {}).status || '').toLowerCase();
+          if (afkStatus !== 'afk' && afkStatus !== 'not-afk') {
+            continue;
+          }
+
+          const interval = this.clipEventInterval(event);
+          if (!interval) {
+            continue;
+          }
+
+          const key = this.sessionKey(identity);
+          const intervals = coverageIntervalsBySession.get(key) || [];
+          intervals.push(interval);
+          coverageIntervalsBySession.set(key, intervals);
+        }
+      }
+
+      const gapsBySession = new Map();
+      for (const [key, activeIntervals] of activeIntervalsBySession.entries()) {
+        const coverageIntervals = this.mergeIntervals(coverageIntervalsBySession.get(key) || []);
+        if (coverageIntervals.length === 0) {
+          continue;
+        }
+
+        const gapIntervals = this.subtractIntervals(activeIntervals, coverageIntervals);
+        const activeGapIntervals = this.mergeIntervals(
+          _.flatMap(gapIntervals, interval =>
+            this.intersectWithIntervals(interval, activeIntervals)
+          )
+        );
+        if (activeGapIntervals.length > 0) {
+          gapsBySession.set(key, activeGapIntervals);
+        }
+      }
+
+      return gapsBySession;
+    },
+    addAfkDataGapDisplayEvents(bucket, events, afkDataGapIntervalsBySession) {
+      if (bucket?.type !== 'afkstatus' || !afkDataGapIntervalsBySession) {
+        return;
+      }
+
+      const identity = this.bucketIdentity(bucket);
+      if (!this.matchesIdentity(identity)) {
+        return;
+      }
+
+      const gapIntervals = afkDataGapIntervalsBySession.get(this.sessionKey(identity)) || [];
+      gapIntervals.forEach((interval, index) => {
+        const duration = interval.end.diff(interval.start, 'seconds', true);
+        if (duration <= 1) {
+          return;
+        }
+
+        events.push({
+          id: `${bucket.id}__afk_data_gap_${index}`,
+          timestamp: interval.start.format(),
+          duration,
+          data: {
+            ...(bucket.data || {}),
+            username: identity.username,
+            device_id: identity.deviceId,
+            device_name: identity.deviceName,
+            session_id: identity.sessionId,
+            session_type: identity.sessionType,
+            status: 'not-afk',
+            reason: 'afk-data-gap-filled',
+            $synthetic: true,
+            $afkDataGapFilled: true,
+          },
+        });
+      });
+    },
+    isIgnoredShortAfkDisplayEvent(bucket, event, identity, ignoredShortAfkIntervalsBySession) {
+      if (bucket?.type !== 'afkstatus' || !ignoredShortAfkIntervalsBySession) {
+        return false;
+      }
+      if (String((event.data || {}).status || '').toLowerCase() !== 'afk') {
+        return false;
+      }
+
+      const interval = this.clipEventInterval(event);
+      if (!interval) {
+        return false;
+      }
+
+      const key = this.sessionKey(identity);
+      const ignoredIntervals = ignoredShortAfkIntervalsBySession.get(key) || [];
+      return ignoredIntervals.some(ignoredInterval => {
+        const ignoredSeconds = ignoredInterval.end.diff(ignoredInterval.start, 'seconds', true);
+        return (
+          this.overlapSeconds(
+            interval.start,
+            interval.end,
+            ignoredInterval.start,
+            ignoredInterval.end
+          ) >= Math.max(0, ignoredSeconds - 0.5)
+        );
+      });
     },
     addAudibleBrowserIntervalsToSessions(
       buckets,
@@ -2139,6 +3311,51 @@ export default {
       }
 
       return merged;
+    },
+    subtractIntervals(baseIntervals, coveredIntervals) {
+      const covered = this.mergeIntervals(coveredIntervals || []);
+      const gaps = [];
+
+      for (const baseInterval of baseIntervals || []) {
+        let cursor = baseInterval.start.clone();
+        const baseEnd = baseInterval.end.clone();
+
+        for (const coveredInterval of covered) {
+          if (!coveredInterval.end.isAfter(cursor)) {
+            continue;
+          }
+          if (!coveredInterval.start.isBefore(baseEnd)) {
+            break;
+          }
+
+          const gapEnd = moment.min(coveredInterval.start, baseEnd);
+          if (gapEnd.isAfter(cursor)) {
+            gaps.push({ start: cursor.clone(), end: gapEnd.clone() });
+          }
+
+          if (coveredInterval.end.isAfter(cursor)) {
+            cursor = coveredInterval.end.clone();
+          }
+          if (!cursor.isBefore(baseEnd)) {
+            break;
+          }
+        }
+
+        if (cursor.isBefore(baseEnd)) {
+          gaps.push({ start: cursor.clone(), end: baseEnd.clone() });
+        }
+      }
+
+      return this.mergeIntervals(gaps);
+    },
+    formatMinutesSeconds(seconds) {
+      const totalSeconds = Math.round(Math.max(0, Number(seconds || 0)));
+      const minutes = Math.floor(totalSeconds / 60);
+      const remainingSeconds = totalSeconds % 60;
+      return `${minutes}m ${remainingSeconds}s`;
+    },
+    formatFleetCategoryRuleDuration(seconds) {
+      return seconds_to_duration(Number(seconds || 0));
     },
     eventIdentity(bucket, event) {
       const bucketIdentity = getBucketIdentity(bucket);
@@ -2472,16 +3689,386 @@ export default {
         ),
       };
     },
+    timelineBarTotalSummaryLines(index) {
+      const totalHours = Number(this.timelineBinTotals?.[index] || 0);
+      if (totalHours <= 0) {
+        return [];
+      }
+      return [`${this.$tr('Bar total')}: ${seconds_to_duration(Math.round(totalHours * 3600))}`];
+    },
+    timelineActiveSummaryLines(index) {
+      const activeSessionTimeLabel = this.$tr('Active session time');
+      const seconds = Number(this.timelineActiveSessionSecondsByBin?.[index] || 0);
+      if (this.subtractAfkTime) {
+        const notAfkActiveSessionTimeLabel = this.$tr('Active after AFK subtraction');
+        const notAfkSeconds = Number(this.timelineNotAfkActiveSessionSecondsByBin?.[index] || 0);
+        const lines = [`${notAfkActiveSessionTimeLabel}: ${seconds_to_duration(notAfkSeconds)}`];
+        if (seconds > notAfkSeconds + 1) {
+          lines.push(`${activeSessionTimeLabel}: ${seconds_to_duration(seconds)}`);
+        }
+        return lines;
+      }
+      return [`${activeSessionTimeLabel}: ${seconds_to_duration(seconds)}`];
+    },
+    handleTimelineChartClick(chart, event, elements = []) {
+      if (!chart || !event) {
+        return;
+      }
+
+      const clickedElements =
+        elements && elements.length > 0 ? elements : this.timelineClickedBarElements(chart, event);
+      if (clickedElements.length > 0) {
+        this.openTimelineBarDetailWindow(chart, event, clickedElements[0]);
+        return;
+      }
+
+      if (this.isTimelineAxisClick(chart, event)) {
+        const index = this.timelineIndexFromPixel(chart, Number(event.x));
+        if (index >= 0 && this.timelineActiveElementsForIndex(chart, index).length > 0) {
+          this.openTimelineAxisDetailWindow(chart, event, index);
+        }
+      }
+    },
+    timelineClickedBarElements(chart, event) {
+      if (!chart?.getElementsAtEventForMode || !event?.native) {
+        return [];
+      }
+      return chart.getElementsAtEventForMode(event.native, 'nearest', { intersect: true }, true);
+    },
+    isTimelineAxisClick(chart, event) {
+      const chartArea = chart?.chartArea;
+      if (!chartArea) {
+        return false;
+      }
+
+      const x = Number(event.x);
+      const y = Number(event.y);
+      return (
+        x >= chartArea.left && x <= chartArea.right && y >= chartArea.bottom && y <= chart.height
+      );
+    },
+    openTimelineBarDetailWindow(chart, event, element) {
+      const datasetIndex = Number(element?.datasetIndex);
+      const index = Number(element?.index);
+      const dataset = chart?.data?.datasets?.[datasetIndex];
+      const values = Array.isArray(dataset?.data) ? dataset.data : [];
+      const visibleSeconds = Number(values[index] || 0) * 3600;
+      if (!dataset || !Number.isFinite(index) || visibleSeconds <= 0) {
+        return;
+      }
+
+      const detail = dataset?.$timelineDetails?.[index];
+      const rawSeconds = Number(detail?.rawDuration || visibleSeconds);
+      const lines = [
+        ...this.timelineBarTotalSummaryLines(index),
+        ...this.timelineActiveSummaryLines(index),
+        '',
+        this.timelineDatasetDurationLine(dataset.label, visibleSeconds, rawSeconds),
+        ...this.formatTimelineTooltipDetail(
+          detail,
+          dataset?.$timelineCategoryLabel || dataset?.label
+        ),
+      ];
+
+      this.openTimelineDetailWindow(chart, event, {
+        subtitle: this.timelineDetailSubtitle(index, dataset.label),
+        lines,
+      });
+    },
+    openTimelineAxisDetailWindow(chart, event, index) {
+      const datasets = chart?.data?.datasets || [];
+      const totalHours = _.sumBy(datasets, (dataset: any) => {
+        const values = Array.isArray(dataset.data) ? dataset.data : [];
+        return Number(values[index] || 0);
+      });
+      if (totalHours <= 0) {
+        return;
+      }
+
+      const afkHours = Number(this.timelineAfkData?.[index] || 0);
+      const lines = [
+        ...this.timelineBarTotalSummaryLines(index),
+        ...this.timelineActiveSummaryLines(index),
+        '',
+      ];
+      if (afkHours > 0) {
+        lines.push(`${this.$tr('AFK time')}: ${seconds_to_duration(afkHours * 3600)}`);
+      }
+      lines.push(...this.formatTimelineAxisTooltipDetail(datasets, index, totalHours));
+
+      this.openTimelineDetailWindow(chart, event, {
+        subtitle: this.timelineDetailSubtitle(index, this.$tr('Total time')),
+        lines,
+      });
+    },
+    timelineDatasetDurationLine(datasetLabel, visibleSeconds, rawSeconds) {
+      const label = `${datasetLabel}: ${seconds_to_duration(visibleSeconds)}`;
+      if (rawSeconds > visibleSeconds + 1) {
+        return `${label} (${this.$tr('Collected device time')}: ${seconds_to_duration(
+          rawSeconds
+        )})`;
+      }
+      return label;
+    },
+    timelineDetailSubtitle(index, suffix = '') {
+      const binLabel = this.timelineBins?.[index]?.label || '';
+      return suffix ? `${binLabel} | ${suffix}` : binLabel;
+    },
+    openTimelineDetailWindow(chart, event, detail) {
+      const lines = this.timelineTextLinesToItems(detail?.lines || []);
+      if (lines.length === 0) {
+        return;
+      }
+
+      this.clearTimelineTooltipHideTimer();
+      this.clearTimelineTooltipShowTimer();
+      this.timelineTooltip = {
+        ...this.timelineTooltip,
+        visible: false,
+      };
+
+      const position = this.timelineDetailWindowPosition(chart, event);
+      this.timelineDetailWindow = {
+        visible: true,
+        x: position.x,
+        y: position.y,
+        width: position.width,
+        height: position.height,
+        subtitle: detail?.subtitle || '',
+        lines,
+      };
+    },
+    timelineDetailWindowPosition(chart, event) {
+      const canvasRect = chart?.canvas?.getBoundingClientRect();
+      const viewportWidth = Number(window?.innerWidth || 1200);
+      const viewportHeight = Number(window?.innerHeight || 800);
+      const windowWidth = Math.min(860, Math.max(440, viewportWidth - 32));
+      const windowHeight = Math.min(680, Math.max(320, viewportHeight - 32));
+      const preferredX = Number(canvasRect?.left || 0) + Number(event?.x || 0) + 18;
+      const preferredY = Number(canvasRect?.top || 0) + Number(event?.y || 0) + 18;
+
+      return {
+        x: Math.max(16, Math.min(preferredX, viewportWidth - windowWidth - 16)),
+        y: Math.max(16, Math.min(preferredY, viewportHeight - windowHeight - 16)),
+        width: windowWidth,
+        height: windowHeight,
+      };
+    },
+    closeTimelineDetailWindow() {
+      this.stopTimelineDetailWindowDrag();
+      this.stopTimelineDetailWindowResize();
+      this.timelineDetailWindow = {
+        ...this.timelineDetailWindow,
+        visible: false,
+      };
+    },
+    startTimelineDetailWindowDrag(event) {
+      const target = event?.target;
+      if (target?.closest?.('.fleet-chart-detail-window__close')) {
+        return;
+      }
+
+      const point = this.timelineDetailDragPoint(event);
+      if (!point || typeof window === 'undefined') {
+        return;
+      }
+
+      const windowElement = event?.currentTarget?.closest?.('.fleet-chart-detail-window');
+      const rect = windowElement?.getBoundingClientRect?.();
+      const left = Number(rect?.left ?? this.timelineDetailWindow.x);
+      const currentTop = Number(rect?.top ?? this.timelineDetailWindow.y);
+
+      this.timelineDetailDrag = {
+        active: true,
+        offsetX: point.clientX - left,
+        offsetY: point.clientY - currentTop,
+        width: Number(rect?.width || 0),
+        height: Number(rect?.height || 0),
+      };
+
+      document.addEventListener('mousemove', this.dragTimelineDetailWindow, true);
+      document.addEventListener('mouseup', this.stopTimelineDetailWindowDrag, true);
+      document.addEventListener('touchmove', this.dragTimelineDetailWindow, true);
+      document.addEventListener('touchend', this.stopTimelineDetailWindowDrag, true);
+      document.addEventListener('touchcancel', this.stopTimelineDetailWindowDrag, true);
+
+      if (event?.cancelable) {
+        event.preventDefault();
+      }
+    },
+    dragTimelineDetailWindow(event) {
+      if (!this.timelineDetailDrag.active || typeof window === 'undefined') {
+        return;
+      }
+
+      const point = this.timelineDetailDragPoint(event);
+      if (!point) {
+        return;
+      }
+
+      if (event?.cancelable) {
+        event.preventDefault();
+      }
+
+      const margin = 8;
+      const width = Number(this.timelineDetailDrag.width || 440);
+      const height = Number(this.timelineDetailDrag.height || 320);
+      const viewportWidth = Number(window.innerWidth || 1200);
+      const viewportHeight = Number(window.innerHeight || 800);
+      const maxX = Math.max(margin, viewportWidth - width - margin);
+      const maxY = Math.max(margin, viewportHeight - height - margin);
+      const x = Math.max(margin, Math.min(point.clientX - this.timelineDetailDrag.offsetX, maxX));
+      const y = Math.max(margin, Math.min(point.clientY - this.timelineDetailDrag.offsetY, maxY));
+
+      this.timelineDetailWindow = {
+        ...this.timelineDetailWindow,
+        x,
+        y,
+      };
+    },
+    stopTimelineDetailWindowDrag() {
+      this.timelineDetailDrag = {
+        ...this.timelineDetailDrag,
+        active: false,
+      };
+
+      if (typeof document === 'undefined') {
+        return;
+      }
+
+      document.removeEventListener('mousemove', this.dragTimelineDetailWindow, true);
+      document.removeEventListener('mouseup', this.stopTimelineDetailWindowDrag, true);
+      document.removeEventListener('touchmove', this.dragTimelineDetailWindow, true);
+      document.removeEventListener('touchend', this.stopTimelineDetailWindowDrag, true);
+      document.removeEventListener('touchcancel', this.stopTimelineDetailWindowDrag, true);
+    },
+    startTimelineDetailWindowResize(event) {
+      const point = this.timelineDetailDragPoint(event);
+      if (!point || typeof window === 'undefined') {
+        return;
+      }
+
+      const windowElement = event?.currentTarget?.closest?.('.fleet-chart-detail-window');
+      const rect = windowElement?.getBoundingClientRect?.();
+      this.timelineDetailResize = {
+        active: true,
+        startX: point.clientX,
+        startY: point.clientY,
+        startWidth: Number(rect?.width || this.timelineDetailWindow.width || 440),
+        startHeight: Number(rect?.height || this.timelineDetailWindow.height || 320),
+      };
+
+      document.addEventListener('mousemove', this.resizeTimelineDetailWindow, true);
+      document.addEventListener('mouseup', this.stopTimelineDetailWindowResize, true);
+      document.addEventListener('touchmove', this.resizeTimelineDetailWindow, true);
+      document.addEventListener('touchend', this.stopTimelineDetailWindowResize, true);
+      document.addEventListener('touchcancel', this.stopTimelineDetailWindowResize, true);
+
+      if (event?.cancelable) {
+        event.preventDefault();
+      }
+    },
+    resizeTimelineDetailWindow(event) {
+      if (!this.timelineDetailResize.active || typeof window === 'undefined') {
+        return;
+      }
+
+      const point = this.timelineDetailDragPoint(event);
+      if (!point) {
+        return;
+      }
+
+      if (event?.cancelable) {
+        event.preventDefault();
+      }
+
+      const margin = 8;
+      const minWidth = Math.min(440, Math.max(280, Number(window.innerWidth || 1200) - margin * 2));
+      const minHeight = Math.min(
+        320,
+        Math.max(220, Number(window.innerHeight || 800) - margin * 2)
+      );
+      const maxWidth = Math.max(
+        minWidth,
+        Number(window.innerWidth || 1200) - Number(this.timelineDetailWindow.x || 0) - margin
+      );
+      const maxHeight = Math.max(
+        minHeight,
+        Number(window.innerHeight || 800) - Number(this.timelineDetailWindow.y || 0) - margin
+      );
+      const width = Math.max(
+        minWidth,
+        Math.min(
+          this.timelineDetailResize.startWidth + point.clientX - this.timelineDetailResize.startX,
+          maxWidth
+        )
+      );
+      const height = Math.max(
+        minHeight,
+        Math.min(
+          this.timelineDetailResize.startHeight + point.clientY - this.timelineDetailResize.startY,
+          maxHeight
+        )
+      );
+
+      this.timelineDetailWindow = {
+        ...this.timelineDetailWindow,
+        width,
+        height,
+      };
+    },
+    stopTimelineDetailWindowResize() {
+      this.timelineDetailResize = {
+        ...this.timelineDetailResize,
+        active: false,
+      };
+
+      if (typeof document === 'undefined') {
+        return;
+      }
+
+      document.removeEventListener('mousemove', this.resizeTimelineDetailWindow, true);
+      document.removeEventListener('mouseup', this.stopTimelineDetailWindowResize, true);
+      document.removeEventListener('touchmove', this.resizeTimelineDetailWindow, true);
+      document.removeEventListener('touchend', this.stopTimelineDetailWindowResize, true);
+      document.removeEventListener('touchcancel', this.stopTimelineDetailWindowResize, true);
+    },
+    timelineDetailDragPoint(event) {
+      if (event?.touches?.length > 0) {
+        return event.touches[0];
+      }
+      if (event?.changedTouches?.length > 0) {
+        return event.changedTouches[0];
+      }
+      return event;
+    },
+    timelineTextLinesToItems(textLines = []) {
+      const lines = [];
+      const pushLine = (text, preferredType = null) => {
+        const value = String(text ?? '');
+        if (value.trim() === '') {
+          lines.push({ type: 'spacer', text: '' });
+          return;
+        }
+        const type = preferredType || (value.includes(':') ? 'item' : 'section');
+        lines.push({ type, text: value });
+      };
+
+      textLines.forEach((line, index) => pushLine(line, index === 0 ? 'title' : null));
+      return lines;
+    },
     updateTimelineExternalTooltip(context) {
       const chart = context?.chart;
       const tooltip = context?.tooltip;
       if (!chart || !tooltip || tooltip.opacity === 0) {
+        this.clearTimelineTooltipShowTimer();
         this.scheduleTimelineTooltipHide();
         return;
       }
 
       const lines = this.timelineTooltipLines(tooltip);
       if (lines.length === 0) {
+        this.clearTimelineTooltipShowTimer();
         this.scheduleTimelineTooltipHide();
         return;
       }
@@ -2495,13 +4082,52 @@ export default {
       const tooltipMaxHeight = Math.min(576, Math.max(260, viewportHeight - 24));
       const preferredX = canvasRect.left + Number(tooltip.caretX || 0) + 16;
       const preferredY = canvasRect.top + Number(tooltip.caretY || 0) + 16;
-
-      this.timelineTooltip = {
+      const signature = this.timelineTooltipSignature(tooltip, lines);
+      const nextTooltip = {
         visible: true,
         x: Math.max(12, Math.min(preferredX, viewportWidth - tooltipWidth - 12)),
         y: Math.max(12, Math.min(preferredY, viewportHeight - tooltipMaxHeight - 12)),
         lines,
+        signature,
       };
+
+      if (this.timelineTooltip.visible && this.timelineTooltip.signature === signature) {
+        this.timelineTooltip = nextTooltip;
+        return;
+      }
+
+      if (this.timelineTooltip.visible) {
+        this.timelineTooltip = {
+          ...this.timelineTooltip,
+          visible: false,
+        };
+      }
+
+      if (this.timelineTooltipPending?.signature === signature) {
+        this.timelineTooltipPending = nextTooltip;
+        return;
+      }
+
+      this.clearTimelineTooltipShowTimer();
+      this.timelineTooltipPending = nextTooltip;
+      this.timelineTooltipShowTimer = window.setTimeout(() => {
+        if (this.timelineTooltipPending?.signature !== signature) {
+          return;
+        }
+
+        this.timelineTooltip = this.timelineTooltipPending;
+        this.timelineTooltipPending = null;
+        this.timelineTooltipShowTimer = null;
+      }, TIMELINE_TOOLTIP_HOVER_DELAY_MS);
+    },
+    timelineTooltipSignature(tooltip, lines) {
+      const dataPointSignature = (tooltip.dataPoints || [])
+        .map(point => `${point.datasetIndex}:${point.dataIndex}`)
+        .join('|');
+      if (dataPointSignature) {
+        return dataPointSignature;
+      }
+      return lines.map(line => `${line.type}:${line.text}`).join('|');
     },
     timelineTooltipLines(tooltip) {
       const lines = [];
@@ -2550,6 +4176,13 @@ export default {
         this.timelineTooltipHideTimer = null;
       }
     },
+    clearTimelineTooltipShowTimer() {
+      if (this.timelineTooltipShowTimer) {
+        window.clearTimeout(this.timelineTooltipShowTimer);
+        this.timelineTooltipShowTimer = null;
+      }
+      this.timelineTooltipPending = null;
+    },
     addTimelineTooltipSection(lines, title, entries, limit = 4, maxLabelLength = 48) {
       const visibleEntries = (entries || []).slice(0, limit);
       if (visibleEntries.length === 0) {
@@ -2575,12 +4208,46 @@ export default {
       }
       return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
     },
+    formatCategoryKeyLabel(key) {
+      return String(key || 'Uncategorized')
+        .split(CATEGORY_KEY_SEPARATOR)
+        .filter(part => part !== '')
+        .join(' > ');
+    },
+    isIgnoredCategory(category) {
+      if (this.ignoredCategoryKeySet.size === 0) {
+        return false;
+      }
+
+      const key = categoryKey(category || ['Uncategorized']);
+      for (const ignoredKey of this.ignoredCategoryKeySet) {
+        if (key === ignoredKey || key.startsWith(`${ignoredKey}${CATEGORY_KEY_SEPARATOR}`)) {
+          return true;
+        }
+      }
+      return false;
+    },
     categoryName(event) {
       return (event.data.$category || ['Uncategorized']).join(' > ');
     },
     formatTimelineAxisTick(value) {
       const hours = Number(value || 0);
       return hours >= 1 ? `${hours}h` : `${Math.round(hours * 60)}m`;
+    },
+    formatTimelineBarValueLabel(value) {
+      const seconds = Math.round(Math.max(0, Number(value || 0) * 3600));
+      if (seconds <= 0) {
+        return '';
+      }
+      if (seconds < 60) {
+        return `${seconds}s`;
+      }
+      if (seconds < 3600) {
+        return `${Math.round(seconds / 60)}m`;
+      }
+
+      const hours = Math.round((seconds / 3600) * 10) / 10;
+      return Number.isInteger(hours) ? `${hours.toFixed(0)}h` : `${hours.toFixed(1)}h`;
     },
     handleTimelineAxisTooltipEvent(chart, args) {
       const event = args?.event;
@@ -2707,6 +4374,30 @@ export default {
     binCapacityHours(bin) {
       return Math.max(1 / 60, moment(bin.end).diff(moment(bin.start), 'hours', true));
     },
+    drawTimelineLabelPill(ctx, left, rectTop, width, height, fillColor, borderColor) {
+      const radius = Math.min(4, height / 2, width / 2);
+      const right = left + width;
+      const bottom = rectTop + height;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(left + radius, rectTop);
+      ctx.lineTo(right - radius, rectTop);
+      ctx.quadraticCurveTo(right, rectTop, right, rectTop + radius);
+      ctx.lineTo(right, bottom - radius);
+      ctx.quadraticCurveTo(right, bottom, right - radius, bottom);
+      ctx.lineTo(left + radius, bottom);
+      ctx.quadraticCurveTo(left, bottom, left, bottom - radius);
+      ctx.lineTo(left, rectTop + radius);
+      ctx.quadraticCurveTo(left, rectTop, left + radius, rectTop);
+      ctx.closePath();
+      ctx.fillStyle = fillColor;
+      ctx.fill();
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+    },
     drawAfkTimelineOverlay(ctx, left, overlayTop, right, bottom, color) {
       const width = right - left;
       const height = bottom - overlayTop;
@@ -2802,6 +4493,33 @@ export default {
   line-height: 1.4;
 }
 
+.fleet-short-afk-input {
+  width: 14rem;
+}
+
+.fleet-ignored-category-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.25rem 0.75rem;
+  max-height: 8.5rem;
+  overflow: auto;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(127, 127, 127, 0.2);
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.fleet-category-rule-target,
+.fleet-category-rule-value {
+  display: block;
+  max-height: 5rem;
+  overflow: auto;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.25rem;
+  background: rgba(127, 127, 127, 0.1);
+  word-break: break-word;
+}
+
 .fleet-summary-panel--sunburst {
   overflow: hidden;
 }
@@ -2817,11 +4535,26 @@ export default {
   background: #fbfcfe;
 }
 
+.fleet-session-summary-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.75rem;
+}
+
+.fleet-session-summary-metric {
+  min-width: 10rem;
+}
+
 .fleet-session-summary-value {
   color: #132033;
   font-size: 1.45rem;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
+}
+
+.fleet-session-summary-value--secondary {
+  color: #3f4c5f;
+  font-size: 1.15rem;
 }
 
 .fleet-session-summary-help {
@@ -2972,6 +4705,147 @@ export default {
   color: #eef1f6;
 }
 
+.fleet-chart-detail-window {
+  position: fixed;
+  z-index: 2600;
+  display: flex;
+  flex-direction: column;
+  width: min(53.75rem, calc(100vw - 2rem));
+  height: min(84vh, 42.5rem);
+  min-width: min(27.5rem, calc(100vw - 1rem));
+  min-height: min(20rem, calc(100vh - 1rem));
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100vh - 1rem);
+  overflow: hidden;
+  border: 1px solid rgba(22, 30, 48, 0.45);
+  border-radius: 0.35rem;
+  background: #f7f8fb;
+  color: #18202f;
+  box-shadow: 0 1.2rem 3rem rgba(0, 0, 0, 0.34);
+}
+
+.fleet-chart-detail-window__titlebar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid rgba(22, 30, 48, 0.18);
+  border-radius: 0.35rem 0.35rem 0 0;
+  background: #273247;
+  color: #fff;
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.fleet-chart-detail-window__title {
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.fleet-chart-detail-window__subtitle {
+  margin-top: 0.15rem;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.fleet-chart-detail-window__close {
+  flex: 0 0 auto;
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0.2rem;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.fleet-chart-detail-window__close:hover,
+.fleet-chart-detail-window__close:focus {
+  background: #b4232e;
+}
+
+.fleet-chart-detail-window__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.85rem 1.1rem 1.15rem 0.95rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.fleet-chart-detail-window__resize-handle {
+  position: absolute;
+  right: 0.25rem;
+  bottom: 0.25rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.fleet-chart-detail-window__resize-handle::after {
+  position: absolute;
+  right: 0.15rem;
+  bottom: 0.15rem;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-right: 2px solid rgba(24, 32, 47, 0.62);
+  border-bottom: 2px solid rgba(24, 32, 47, 0.62);
+  content: '';
+}
+
+.fleet-chart-detail-window .fleet-chart-tooltip-line--title {
+  color: #0b1830;
+}
+
+.fleet-chart-detail-window .fleet-chart-tooltip-line--section {
+  color: #24344f;
+}
+
+.fleet-chart-detail-window .fleet-chart-tooltip-line--item {
+  color: #111827;
+}
+
+.fleet-chart-detail-window--dark {
+  border-color: rgba(233, 235, 240, 0.22);
+  background: #10151f;
+  color: #eef1f6;
+  box-shadow: 0 1.2rem 3rem rgba(0, 0, 0, 0.58);
+}
+
+.fleet-chart-detail-window--dark .fleet-chart-detail-window__titlebar {
+  border-bottom-color: rgba(233, 235, 240, 0.16);
+  background: #202637;
+}
+
+.fleet-chart-detail-window--dark .fleet-chart-detail-window__body {
+  color: #f2f5fb;
+}
+
+.fleet-chart-detail-window--dark .fleet-chart-detail-window__resize-handle::after {
+  border-right-color: rgba(242, 245, 251, 0.72);
+  border-bottom-color: rgba(242, 245, 251, 0.72);
+}
+
+.fleet-chart-detail-window--dark .fleet-chart-tooltip-line--title {
+  color: #ffffff;
+}
+
+.fleet-chart-detail-window--dark .fleet-chart-tooltip-line--section {
+  color: #d7deea;
+}
+
+.fleet-chart-detail-window--dark .fleet-chart-tooltip-line--item {
+  color: #f2f5fb;
+}
+
 .fleet-activity-summary--dark .fleet-session-summary-strip,
 .fleet-activity-summary--dark .fleet-summary-panel,
 .fleet-activity-summary--dark .fleet-summary-filters {
@@ -2979,8 +4853,17 @@ export default {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.fleet-activity-summary--dark .fleet-ignored-category-list {
+  border-color: rgba(233, 235, 240, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .fleet-activity-summary--dark .fleet-session-summary-value {
   color: #eef1f6;
+}
+
+.fleet-activity-summary--dark .fleet-session-summary-value--secondary {
+  color: #c5ccd8;
 }
 
 @media (max-width: 575.98px) {

@@ -1,5 +1,5 @@
 <template lang="pug">
-b-modal(v-if="event && event.id", :id="'edit-modal-' + event.id", ref="eventEditModal", title="Edit event", centered, size="lg", hide-footer)
+b-modal(v-if="event && event.id", :id="'edit-modal-' + event.id", ref="eventEditModal", title="Edit event", centered, size="lg", hide-footer, @hidden="handleHidden")
   div(v-if="!editedEvent")
     | Loading event...
 
@@ -468,6 +468,9 @@ export default {
     close() {
       this.$refs.eventEditModal.hide();
       this.$emit('close', this.event);
+    },
+    handleHidden() {
+      this.$emit('hidden', this.event);
     },
   },
 };

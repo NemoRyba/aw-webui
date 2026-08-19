@@ -32,17 +32,6 @@ div
       )
       code.ml-2 {{ afkOverlayColor }}
 
-  div.d-sm-flex.justify-content-between.align-items-start.my-4
-    div
-      h6.mb-1 {{ $tr('Fleet summary filter defaults') }}
-      small.text-muted
-        | {{ $tr('Initial checkbox states for Fleet user summary filters.') }}
-    div.mt-2.mt-sm-0
-      b-form-checkbox(v-model="fleetSummarySubtractAfkTime" switch)
-        | {{ $tr('Subtract AFK time by default') }}
-      b-form-checkbox(v-model="fleetSummaryCountAudibleBrowserTime" switch)
-        | {{ $tr('Count audible browser tab as active by default') }}
-
   div.my-4
     b-alert(variant="warning" :show="classes_unsaved_changes")
       | You have unsaved changes!
@@ -100,22 +89,6 @@ export default {
       },
       set(value) {
         this.settingsStore.update({ afkOverlayColor: value });
-      },
-    },
-    fleetSummarySubtractAfkTime: {
-      get() {
-        return !this.settingsStore.fleetSummaryShowAfkTime;
-      },
-      set(value) {
-        this.settingsStore.update({ fleetSummaryShowAfkTime: !value });
-      },
-    },
-    fleetSummaryCountAudibleBrowserTime: {
-      get() {
-        return !this.settingsStore.fleetSummaryIgnoreAudibleBrowserTime;
-      },
-      set(value) {
-        this.settingsStore.update({ fleetSummaryIgnoreAudibleBrowserTime: !value });
       },
     },
   },

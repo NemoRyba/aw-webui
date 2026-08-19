@@ -28,7 +28,11 @@
       i Buckets with no events in the queried range will be hidden.
 
     div(v-if="editingEvent")
-      EventEditor(:event="editingEvent" :bucket_id="editingEventBucket")
+      EventEditor(
+        :event="editingEvent"
+        :bucket_id="editingEventBucket"
+        @hidden="onEditorHidden"
+      )
 </template>
 
 <style lang="scss">
@@ -198,6 +202,7 @@ export default {
       },
       editingEvent: null,
       editingEventBucket: null,
+      editorScrollPosition: null,
       detailItemId: null,
       detailHtml: '',
 
@@ -329,6 +334,40 @@ export default {
     openEditor: function () {
       this.$bvModal.show('edit-modal-' + this.editingEvent.id);
     },
+    capturePageScrollPosition() {
+      if (typeof window === 'undefined') {
+        return null;
+      }
+      return {
+        x: window.pageXOffset || document.documentElement?.scrollLeft || 0,
+        y: window.pageYOffset || document.documentElement?.scrollTop || 0,
+      };
+    },
+    restorePageScrollPosition(position) {
+      if (!position || typeof window === 'undefined') {
+        return;
+      }
+
+      const restore = () => {
+        window.scrollTo(position.x, position.y);
+      };
+
+      restore();
+      this.$nextTick(() => {
+        restore();
+        if (window.requestAnimationFrame) {
+          window.requestAnimationFrame(restore);
+        }
+        window.setTimeout(restore, 50);
+      });
+    },
+    onEditorHidden() {
+      const scrollPosition = this.editorScrollPosition;
+      this.editingEvent = null;
+      this.editingEventBucket = null;
+      this.editorScrollPosition = null;
+      this.restorePageScrollPosition(scrollPosition);
+    },
     timelineColorTarget(bucket, event) {
       const bucketType = String(bucket?.type || '');
       if (bucketType !== 'sessionstate' && !bucketType.startsWith('audio.')) {
@@ -408,6 +447,7 @@ export default {
 
         const event = item.event;
         const bucketId = item.bucketId;
+        this.editorScrollPosition = this.capturePageScrollPosition();
 
         // We retrieve the full event to ensure if's not cut-off by the query range
         // See: https://github.com/ActivityWatch/aw-webui/pull/320#issuecomment-1056921587
@@ -479,7 +519,7 @@ export default {
           detailHtml: item.tooltip,
           bucketId: item.bucketId,
           event: item.event,
-          editable: !item.colorTarget,
+          editable: !item.colorTarget && !item.event?.data?.$synthetic,
           colorTarget: item.colorTarget,
         };
       });

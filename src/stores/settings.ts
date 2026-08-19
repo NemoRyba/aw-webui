@@ -17,6 +17,10 @@ export const LONG_BACKOFF_PERIOD = 5 * 24 * 60 * 60;
 
 // Initial wait period for UserSatisfactionPoll
 export const INITIAL_WAIT_PERIOD = 7 * 24 * 60 * 60;
+const DEPRECATED_SETTINGS_KEYS = new Set([
+  'fleetSummaryShowAfkTime',
+  'fleetSummaryIgnoreAudibleBrowserTime',
+]);
 
 interface State {
   // Timestamp when user was first seen (first time webapp is run)
@@ -28,8 +32,7 @@ interface State {
   durationDefault: number;
   useColorFallback: boolean;
   afkOverlayColor: string;
-  fleetSummaryShowAfkTime: boolean;
-  fleetSummaryIgnoreAudibleBrowserTime: boolean;
+  fleetActivitySummaryFilterStateData: Record<string, any>;
   timelineStateColorsData: Record<string, string>;
   landingpage: string;
   theme: 'light' | 'dark' | 'auto';
@@ -65,8 +68,7 @@ export const useSettingsStore = defineStore('settings', {
     durationDefault: 4 * 60 * 60,
     useColorFallback: false,
     afkOverlayColor: '#ff4d4f',
-    fleetSummaryShowAfkTime: false,
-    fleetSummaryIgnoreAudibleBrowserTime: false,
+    fleetActivitySummaryFilterStateData: {},
     timelineStateColorsData: {},
     landingpage: '/home',
 
@@ -124,7 +126,7 @@ export const useSettingsStore = defineStore('settings', {
       const all_keys = [...Object.keys(localStorage), ...Object.keys(server_settings)].filter(
         key => {
           // Skip keys starting with underscore, as they are local to the vuex store.
-          return !key.startsWith('_');
+          return !key.startsWith('_') && !DEPRECATED_SETTINGS_KEYS.has(key);
         }
       );
 

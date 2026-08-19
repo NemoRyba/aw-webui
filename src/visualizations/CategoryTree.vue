@@ -2,7 +2,7 @@
 div.aw-categorytree(:class="{'aw-categorytree--horizontal': horizontal}")
   div.aw-categorytree-groups(v-if="horizontal")
     div.aw-categorytree-group(v-for="root in root_categories" :key="root.name_pretty")
-      div.aw-categorytree-row.aw-categorytree-row--root(@click="toggle(root)", :title="category_tooltip(root)", :class="{'clickable': has_children(root)}")
+      div.aw-categorytree-row.aw-categorytree-row--root(@click="handle_category_click(root)", :title="category_tooltip(root)", :class="row_class(root)")
         span.aw-categorytree-color(v-if="show_colors", :style="{ backgroundColor: category_color(root) }")
         span.aw-categorytree-icon(v-if="has_children(root)")
           b(v-if="!expanded.has(root.name_pretty)")
@@ -16,9 +16,9 @@ div.aw-categorytree(:class="{'aw-categorytree--horizontal': horizontal}")
       div.aw-categorytree-row(
         v-for="cat in visible_descendants(root)"
         :key="cat.name_pretty"
-        @click="toggle(cat)"
+        @click="handle_category_click(cat)"
         :title="category_tooltip(cat)"
-        :class="{'clickable': has_children(cat), 'aw-categorytree-row--app': cat.is_app_detail}"
+        :class="row_class(cat)"
       )
         span.aw-categorytree-indent(:style="'width: ' + (1.1 * Math.max(0, cat.depth - 1)) + 'em'")
         span.aw-categorytree-color(v-if="show_colors", :style="{ backgroundColor: category_color(cat) }")
@@ -32,7 +32,7 @@ div.aw-categorytree(:class="{'aw-categorytree--horizontal': horizontal}")
         span.aw-categorytree-label {{cat.subname}}
         span.aw-categorytree-duration {{format_category_value(cat)}}
   div.aw-categorytree-list(v-else)
-    div.aw-categorytree-row.px-1(v-for="cat in category_hierarchy" @click="toggle(cat)" v-if="parents_expanded(cat)", :title="category_tooltip(cat)", :class="{'clickable': has_children(cat), 'aw-categorytree-row--app': cat.is_app_detail}")
+    div.aw-categorytree-row.px-1(v-for="cat in category_hierarchy" @click="handle_category_click(cat)" v-if="parents_expanded(cat)", :title="category_tooltip(cat)", :class="row_class(cat)")
       span.aw-categorytree-indent(:style="'width: ' + (1.4 * cat.depth) + 'em'")
       span.aw-categorytree-color(v-if="show_colors", :style="{ backgroundColor: category_color(cat) }")
       span.aw-categorytree-icon(v-if="has_children(cat)")
@@ -83,6 +83,14 @@ div.aw-categorytree(:class="{'aw-categorytree--horizontal': horizontal}")
 .aw-categorytree-row--app {
   font-size: 0.92em;
   opacity: 0.92;
+}
+
+.aw-categorytree-row--actionable {
+  cursor: pointer;
+}
+
+.aw-categorytree-row--actionable:hover {
+  background: rgba(127, 127, 127, 0.12);
 }
 
 .aw-categorytree-indent {
@@ -176,6 +184,7 @@ export default {
     expand_roots: { type: Boolean, default: false },
     expand_all: { type: Boolean, default: false },
     show_apps: { type: Boolean, default: false },
+    categorize_uncategorized_apps: { type: Boolean, default: false },
   },
   data: function () {
     return {
@@ -261,6 +270,7 @@ export default {
         const groupKey = `${_category_key(category)}${CATEGORY_KEY_SEPARATOR}app:${app}`;
         const groupedApp = grouped.get(groupKey) || {
           app,
+          process_name: String(event.data?.process_name || app),
           category,
           parent,
           duration: 0,
@@ -284,6 +294,8 @@ export default {
           children: [],
           is_app_detail: true,
           category: groupedApp.category,
+          app: groupedApp.app,
+          process_name: groupedApp.process_name,
           title_breakdown: _sorted_duration_entries(groupedApp.titles).slice(0, 5),
         };
       });
@@ -303,6 +315,27 @@ export default {
       }
       // needed to trigger update, since Set isn't reactive in Vue 2
       this.expanded = new Set(this.expanded);
+    },
+    handle_category_click: function (cat) {
+      if (this.is_uncategorized_app_action(cat)) {
+        this.$emit('categorize-app', cat);
+        return;
+      }
+      this.toggle(cat);
+    },
+    is_uncategorized_app_action: function (cat) {
+      return (
+        this.categorize_uncategorized_apps &&
+        cat?.is_app_detail &&
+        _.isEqual(cat.category || [], ['Uncategorized'])
+      );
+    },
+    row_class: function (cat) {
+      return {
+        clickable: this.has_children(cat),
+        'aw-categorytree-row--app': cat?.is_app_detail,
+        'aw-categorytree-row--actionable': this.is_uncategorized_app_action(cat),
+      };
     },
     expand_default_roots: function (cats) {
       if ((!this.expand_roots && !this.expand_all) || this.userToggled) {
@@ -366,6 +399,10 @@ export default {
         cat.title_breakdown.forEach(entry => {
           lines.push(`${entry.label}: ${seconds_to_duration(entry.duration)}`);
         });
+      }
+      if (this.is_uncategorized_app_action(cat)) {
+        lines.push('');
+        lines.push(this.$tr('Click to categorize matching app'));
       }
       return lines.join('\n');
     },

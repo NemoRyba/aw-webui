@@ -19,6 +19,7 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Drag columns to change the order': 'Spalten per Ziehen neu anordnen',
     'Reset to default': 'Auf Standard zurücksetzen',
     Close: 'Schließen',
+    'Resize window': 'Fenstergroesse aendern',
     Activity: 'Aktivität',
     Loading: 'Lädt',
     'Loading...': 'Lädt...',
@@ -59,6 +60,11 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     Active: 'Aktiv',
     'Active time': 'Aktivzeit',
     'Active session time': 'Aktive Sitzungszeit',
+    'Active after AFK subtraction': 'Aktivzeit nach AFK-Abzug',
+    'Raw active session time is shown first; after-AFK active time follows when AFK data exists. Overlapping active sessions across selected devices are counted once.':
+      'Rohe aktive Sitzungszeit wird zuerst angezeigt; aktive Zeit nach AFK-Abzug folgt, wenn AFK-Daten vorhanden sind. Ueberlappende aktive Sitzungen auf ausgewaehlten Geraeten werden einmal gezaehlt.',
+    'AFK time is not subtracted; overlapping active sessions across selected devices are counted once.':
+      'AFK-Zeit wird nicht abgezogen; ueberlappende aktive Sitzungen auf ausgewaehlten Geraeten werden einmal gezaehlt.',
     'Overlapping active sessions across selected devices are counted once.':
       'Überlappende aktive Sitzungen auf ausgewählten Geräten werden einmal gezählt.',
     'Total time': 'Gesamtzeit',
@@ -152,9 +158,24 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Filter app, title, URL, device...': 'App, Titel, URL, Gerät filtern...',
     'Show AFK time': 'AFK-Zeit anzeigen',
     'Subtract AFK time': 'AFK-Zeit abziehen',
+    'Ignore short AFK periods up to': 'Kurze AFK-Zeiten ignorieren bis',
+    'Short AFK threshold': 'Schwellwert fuer kurze AFK-Zeiten',
+    'Short AFK unit': 'Zeiteinheit fuer kurze AFK-Zeiten',
+    'Max active-session AFK': 'Max. AFK in aktiver Sitzung',
+    'Count AFK watcher gaps as active only inside active sessions':
+      'AFK-Watcher-Luecken nur in aktiven Sitzungen als aktiv zaehlen',
+    seconds: 'Sekunden',
     'Show percent': 'Prozent anzeigen',
     'Events counted: {count}': 'Gezählte Ereignisse: {count}',
     'No data': 'Keine Daten',
+    'Bar total': 'Balken gesamt',
+    'Ignored categories': 'Ignorierte Kategorien',
+    'Clear ignored categories': 'Ignorierte Kategorien leeren',
+    'No categories available in current range': 'Keine Kategorien im aktuellen Zeitraum verfügbar',
+    'Ignored categories are removed from activity summaries and charts.':
+      'Ignorierte Kategorien werden aus Aktivitätsübersichten und Diagrammen entfernt.',
+    'Clicked uncategorized app': 'Angeklickte unzugeordnete App',
+    'Click to categorize matching app': 'Klicken, um passende App zu kategorisieren',
     'Collected device time': 'Erfasste Gerätezeit',
     'Device breakdown': 'Geräteaufteilung',
     'Device entries': 'Geräte-Einträge',
@@ -563,13 +584,6 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'AFK overlay color': 'AFK-Overlay-Farbe',
     'Color used for the hatched AFK overlay in summary bars.':
       'Farbe für das schraffierte AFK-Overlay in Übersichts-Balken.',
-    'Fleet summary filter defaults': 'Standardfilter für Flottenübersichten',
-    'Initial checkbox states for Fleet user summary filters.':
-      'Anfangszustand der Checkboxen in Flotten-Benutzerübersichten.',
-    'Show AFK time by default': 'AFK-Zeit standardmäßig anzeigen',
-    'Subtract AFK time by default': 'AFK-Zeit standardmäßig abziehen',
-    'Count audible browser tab as active by default':
-      'Hörbaren Browser-Tab standardmäßig als aktiv zählen',
     Enabled: 'Aktiviert',
     Disabled: 'Deaktiviert',
     'Use fallback colors': 'Fallback-Farben verwenden',
