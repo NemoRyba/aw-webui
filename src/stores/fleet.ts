@@ -7,6 +7,9 @@ import {
   IFleetDeviceListItem,
   IFleetDeviceMetricsResponse,
   IFleetLiveResponse,
+  IFleetSummaryPrecomputeConfig,
+  IFleetSummaryPrecomputeResult,
+  IFleetSummaryResponse,
   IFleetStorageStatus,
   IFleetUserDetail,
   IFleetUserListItem,
@@ -34,6 +37,8 @@ function storageCacheKey(startOfDay: string): string {
 interface State {
   live: IFleetLiveResponse | null;
   storage: IFleetStorageStatus | null;
+  summary: IFleetSummaryResponse | null;
+  summaryPrecomputeConfig: IFleetSummaryPrecomputeConfig | null;
   users: IFleetUserListItem[];
   devices: IFleetDeviceListItem[];
   deviceMetrics: IFleetDeviceMetricsResponse | null;
@@ -45,6 +50,8 @@ export const useFleetStore = defineStore('fleet', {
   state: (): State => ({
     live: null,
     storage: null,
+    summary: null,
+    summaryPrecomputeConfig: null,
     users: [],
     devices: [],
     deviceMetrics: null,
@@ -95,6 +102,46 @@ export const useFleetStore = defineStore('fleet', {
       return this.users;
     },
 
+    async loadSummary(params = {}): Promise<IFleetSummaryResponse> {
+      const response = await getClient().req.get('/0/fleet/summary', {
+        params,
+      });
+      const summary = response.data;
+      this.$patch({ summary, users: summary.users || this.users });
+      return summary;
+    },
+
+    async loadSummaryPrecomputeConfig(): Promise<IFleetSummaryPrecomputeConfig> {
+      const response = await getClient().req.get('/0/fleet/summary/precompute/config');
+      this.$patch({ summaryPrecomputeConfig: response.data });
+      return response.data;
+    },
+
+    async saveSummaryPrecomputeConfig(
+      config: Partial<IFleetSummaryPrecomputeConfig>
+    ): Promise<IFleetSummaryPrecomputeConfig> {
+      const response = await getClient().req.post('/0/fleet/summary/precompute/config', config);
+      this.$patch({ summaryPrecomputeConfig: response.data });
+      return response.data;
+    },
+
+    async precomputeSummary(payload = {}): Promise<IFleetSummaryPrecomputeResult> {
+      const response = await getClient().req.post('/0/fleet/summary/precompute', payload);
+      const result = response.data;
+      if (result.runs) {
+        this.$patch({
+          summaryPrecomputeConfig: {
+            ...(this.summaryPrecomputeConfig || {
+              auto_enabled: false,
+              start_of_day: '04:00',
+            }),
+            runs: result.runs,
+          },
+        });
+      }
+      return result;
+    },
+
     async loadUser(username: string, params = {}): Promise<IFleetUserDetail> {
       const response = await getClient().req.get(`/0/fleet/users/${encodeURIComponent(username)}`, {
         params,
@@ -104,6 +151,26 @@ export const useFleetStore = defineStore('fleet', {
         [username]: response.data,
       };
       return response.data;
+    },
+
+    async recalculateUserSummary(username: string, payload = {}): Promise<IFleetUserDetail> {
+      const response = await getClient().req.post(
+        `/0/fleet/users/${encodeURIComponent(username)}/summary/recalculate`,
+        payload
+      );
+      const cachedSummary = response.data;
+      const existing = this.userDetails[username];
+      if (existing) {
+        this.userDetails = {
+          ...this.userDetails,
+          [username]: {
+            ...existing,
+            totals: cachedSummary.totals,
+            summary_cache: cachedSummary.summary_cache,
+          },
+        };
+      }
+      return this.userDetails[username] || cachedSummary;
     },
 
     async loadDevices(): Promise<IFleetDeviceListItem[]> {

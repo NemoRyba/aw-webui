@@ -641,6 +641,7 @@ export default {
   },
   props: {
     user: { type: Object, required: true },
+    preferBackendSessionTotals: { type: Boolean, default: false },
   },
   data() {
     const settingsStore = useSettingsStore();
@@ -1347,6 +1348,9 @@ export default {
       );
     },
     activeSessionSeconds() {
+      if (this.preferBackendSessionTotals && this.user?.totals?.active_seconds !== undefined) {
+        return this.user.totals.active_seconds;
+      }
       return this.localActiveSessionSeconds ?? this.user?.totals?.active_seconds ?? 0;
     },
     activeSessionDurationLabel() {
@@ -1393,6 +1397,12 @@ export default {
       return _.sum(intervals.map(interval => interval.end.diff(interval.start, 'seconds', true)));
     },
     notAfkActiveSessionSeconds() {
+      if (
+        this.preferBackendSessionTotals &&
+        this.user?.totals?.not_afk_active_seconds !== undefined
+      ) {
+        return this.user.totals.not_afk_active_seconds;
+      }
       return (
         this.localNotAfkActiveSessionSeconds ?? this.user?.totals?.not_afk_active_seconds ?? null
       );

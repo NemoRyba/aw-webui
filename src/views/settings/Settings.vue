@@ -12,6 +12,10 @@ div
 
   hr
 
+  FleetSummaryPrecomputeSettings
+
+  hr
+
   TimelineDurationSettings
 
   hr
@@ -49,6 +53,7 @@ import { useAuthStore } from '~/stores/auth';
 
 import AdminAuthSettings from '~/views/settings/AdminAuthSettings.vue';
 import DaystartSettings from '~/views/settings/DaystartSettings.vue';
+import FleetSummaryPrecomputeSettings from '~/views/settings/FleetSummaryPrecomputeSettings.vue';
 import TimelineDurationSettings from '~/views/settings/TimelineDurationSettings.vue';
 import ReleaseNotificationSettings from '~/views/settings/ReleaseNotificationSettings.vue';
 import CategorizationSettings from '~/views/settings/CategorizationSettings.vue';
@@ -62,6 +67,7 @@ export default {
   name: 'Settings',
   components: {
     DaystartSettings,
+    FleetSummaryPrecomputeSettings,
     AdminAuthSettings,
     TimelineDurationSettings,
     ReleaseNotificationSettings,

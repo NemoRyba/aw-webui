@@ -8,6 +8,7 @@ import { getSettingsLandingPage, isLandingRedirectPath } from './util/landingPag
 
 const Login = () => import('./views/Login.vue');
 const FleetOverview = () => import('./views/fleet/FleetOverview.vue');
+const FleetSummary = () => import('./views/fleet/FleetSummary.vue');
 const FleetUsers = () => import('./views/fleet/FleetUsers.vue');
 const FleetUser = () => import('./views/fleet/FleetUser.vue');
 const FleetDevices = () => import('./views/fleet/FleetDevices.vue');
@@ -44,6 +45,7 @@ const router = new VueRouter({
     { path: '/login', component: Login, meta: { public: true, authOnly: true } },
     { path: '/home', component: FleetOverview },
     { path: '/fleet', component: FleetOverview },
+    { path: '/fleet/summary', component: FleetSummary },
     { path: '/fleet/users', component: FleetUsers },
     { path: '/fleet/users/:username', component: FleetUser, props: true },
     { path: '/fleet/devices', component: FleetDevices },

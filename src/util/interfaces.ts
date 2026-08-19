@@ -122,6 +122,13 @@ export interface IFleetTotals {
   locked_seconds: number;
   disconnected_seconds: number;
   logged_in_seconds?: number;
+  not_afk_active_seconds?: number;
+}
+
+export interface IFleetSummaryCacheMeta {
+  cached: boolean;
+  calculated_at?: string | null;
+  source?: string | null;
 }
 
 export interface IFleetUserDeviceOption {
@@ -137,6 +144,7 @@ export interface IFleetUserDetail {
   available_devices: IFleetUserDeviceOption[];
   selected_devices: string[];
   totals: IFleetTotals;
+  summary_cache?: IFleetSummaryCacheMeta;
   apps: Array<{
     app: string;
     seconds: number;
@@ -145,6 +153,48 @@ export interface IFleetUserDetail {
     devices: string[];
   }>;
   sessions: IFleetLiveUser[];
+}
+
+export interface IFleetUserSummaryRow extends IFleetUserListItem {
+  totals: IFleetTotals;
+  selected_devices?: string[];
+  summary_cache?: IFleetSummaryCacheMeta;
+}
+
+export interface IFleetSummaryResponse {
+  generated_at: string;
+  range: { start: string; end: string };
+  filters?: { exclude_inactive_session_afk?: boolean };
+  users: IFleetUserSummaryRow[];
+}
+
+export interface IFleetSummaryPrecomputeRun {
+  run_key: string;
+  range: { start: string; end: string };
+  start_of_day: string;
+  source: string;
+  status: string;
+  started_at: string;
+  finished_at?: string | null;
+  users_total: number;
+  users_done: number;
+  message?: string | null;
+}
+
+export interface IFleetSummaryPrecomputeConfig {
+  auto_enabled: boolean;
+  start_of_day: string;
+  runs?: IFleetSummaryPrecomputeRun[];
+}
+
+export interface IFleetSummaryPrecomputeResult {
+  status: string;
+  message?: string;
+  run?: IFleetSummaryPrecomputeRun;
+  users_total?: number;
+  users_done?: number;
+  errors?: string[];
+  runs?: IFleetSummaryPrecomputeRun[];
 }
 
 export interface IFleetDeviceDetail {

@@ -17,6 +17,14 @@ div
       )
       b-button(size="sm" variant="outline-dark" @click="refresh")
         | {{ $tr('Refresh') }}
+      b-button(
+        size="sm"
+        variant="outline-dark"
+        @click="recalculateSummary"
+        :disabled="summaryRecalculating"
+      )
+        icon(name="sync")
+        span.ml-1 {{ summaryRecalculating ? $tr('Calculating...') : $tr('Recalculate') }}
 
   b-card.mb-3
     div.fleet-user-range-shortcuts.mb-2
@@ -62,7 +70,11 @@ div
   b-alert(show variant="info" v-if="!user")
     | {{ $tr('No data found for this user.') }}
 
-  fleet-activity-summary(v-if="user" :user="user")
+  fleet-activity-summary(
+    v-if="user"
+    :user="user"
+    :prefer-backend-session-totals="!!user.summary_cache"
+  )
 
   b-card.mb-3(v-if="user")
     div.d-flex.align-items-center.mb-3
@@ -118,6 +130,7 @@ div
 import moment from 'moment';
 import 'vue-awesome/icons/arrow-left';
 import 'vue-awesome/icons/arrow-right';
+import 'vue-awesome/icons/sync';
 
 import { useSettingsStore } from '~/stores/settings';
 import { useFleetStore } from '~/stores/fleet';
@@ -140,6 +153,7 @@ export default {
       startDate: moment().format('YYYY-MM-DD'),
       endDate: moment().format('YYYY-MM-DD'),
       selectedDeviceIds: [],
+      summaryRecalculating: false,
       tableKeys: {
         apps: 'fleet-user-apps',
         sessions: 'fleet-user-sessions',
@@ -289,9 +303,11 @@ export default {
       await this.refresh();
     },
     buildParams() {
+      const start = this.rangeBoundary(this.startDate);
+      const end = this.rangeBoundary(this.endDate).add(1, 'day');
       const params: Record<string, string> = {
-        start: moment(this.startDate).startOf('day').toISOString(),
-        end: moment(this.endDate).endOf('day').toISOString(),
+        start: start.toISOString(),
+        end: end.toISOString(),
       };
       if (!this.isAllDevicesSelected()) {
         params.device_ids = this.selectedDeviceIds.join(',');
@@ -299,9 +315,28 @@ export default {
       params.exclude_inactive_session_afk = 'true';
       return params;
     },
+    rangeBoundary(date) {
+      const [hour, minute] = String(this.settingsStore.startOfDay || '04:00')
+        .split(':')
+        .map(value => Number(value));
+      return moment(date)
+        .hour(Number.isFinite(hour) ? hour : 4)
+        .minute(Number.isFinite(minute) ? minute : 0)
+        .second(0)
+        .millisecond(0);
+    },
     async refresh() {
       const user = await this.fleetStore.loadUser(this.username, this.buildParams());
       this.selectedDeviceIds = user.selected_devices || [];
+    },
+    async recalculateSummary() {
+      this.summaryRecalculating = true;
+      try {
+        await this.fleetStore.recalculateUserSummary(this.username, this.buildParams());
+        await this.refresh();
+      } finally {
+        this.summaryRecalculating = false;
+      }
     },
     formatDeviceList(deviceIds) {
       if (!this.user || !deviceIds || deviceIds.length === 0) {

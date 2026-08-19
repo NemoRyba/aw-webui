@@ -249,6 +249,24 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Server storage': 'Server-Speicher',
     Calculated: 'Berechnet',
     Recalculate: 'Neu berechnen',
+    'Calculating...': 'Berechnet...',
+    Zusammenfassung: 'Zusammenfassung',
+    'Unable to load fleet summary': 'Flotten-Zusammenfassung konnte nicht geladen werden',
+    'Unable to recalculate fleet summary':
+      'Flotten-Zusammenfassung konnte nicht neu berechnet werden',
+    'Fleet summary pre-calculation': 'Flotten-Zusammenfassung vorberechnen',
+    'Day boundary': 'Tagesgrenze',
+    'Pre-calculate selected day': 'Ausgewaehlten Tag vorberechnen',
+    Started: 'Gestartet',
+    'Unable to load fleet summary settings':
+      'Einstellungen fuer Flotten-Zusammenfassung konnten nicht geladen werden',
+    'Settings saved': 'Einstellungen gespeichert',
+    'Unable to save fleet summary settings':
+      'Einstellungen fuer Flotten-Zusammenfassung konnten nicht gespeichert werden',
+    'Pre-calculation finished for {done} of {total} users':
+      'Vorberechnung fuer {done} von {total} Benutzern abgeschlossen',
+    'Unable to pre-calculate fleet summary':
+      'Flotten-Zusammenfassung konnte nicht vorberechnet werden',
     'ActivityWatch data': 'ActivityWatch-Daten',
     'Disk size': 'Datenträgergröße',
     'Free disk space': 'Freier Speicherplatz',
