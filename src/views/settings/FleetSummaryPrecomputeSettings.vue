@@ -19,21 +19,37 @@ div
     | {{ message }}
 
   div.row.mt-3
-    div.col-md-4
-      label.small.text-muted(for="fleet-summary-precompute-day") {{ $tr('Day') }}
-      input#fleet-summary-precompute-day.form-control.form-control-sm(
+    div.col-md-3
+      label.small.text-muted(for="fleet-summary-precompute-start") {{ $tr('Start') }}
+      input#fleet-summary-precompute-start.form-control.form-control-sm(
         type="date"
-        v-model="manualDate"
+        v-model="manualStartDate"
+        :max="manualEndDate"
         :disabled="loading || precomputing"
       )
-    div.col-md-8.mt-3.mt-md-4
+    div.col-md-3.mt-2.mt-md-0
+      label.small.text-muted(for="fleet-summary-precompute-end") {{ $tr('End') }}
+      input#fleet-summary-precompute-end.form-control.form-control-sm(
+        type="date"
+        v-model="manualEndDate"
+        :min="manualStartDate"
+        :disabled="loading || precomputing"
+      )
+    div.col-md-6.mt-3.mt-md-4
       b-button(
         size="sm"
         variant="outline-dark"
-        @click="precomputeManualDay"
-        :disabled="loading || precomputing"
+        @click="precomputeManualRange"
+        :disabled="loading || precomputing || selectedDays.length === 0"
       )
-        | {{ precomputing ? $tr('Calculating...') : $tr('Pre-calculate selected day') }}
+        | {{ precomputing ? progressLabel : precomputeButtonLabel }}
+
+  b-progress.mt-3(
+    v-if="precomputing && rangeDaysTotal > 1"
+    :max="rangeDaysTotal"
+    :value="rangeDaysDone"
+    height="0.35rem"
+  )
 
   div.mt-3(v-if="runs.length > 0")
     b-table(
@@ -82,7 +98,10 @@ export default {
       precomputing: false,
       error: '',
       message: '',
-      manualDate: previousCompletedDay(settingsStore.startOfDay),
+      manualStartDate: previousCompletedDay(settingsStore.startOfDay),
+      manualEndDate: previousCompletedDay(settingsStore.startOfDay),
+      rangeDaysDone: 0,
+      rangeDaysTotal: 0,
     };
   },
   computed: {
@@ -100,6 +119,35 @@ export default {
     },
     runs() {
       return this.config.runs || [];
+    },
+    selectedDays() {
+      const start = moment(this.manualStartDate, 'YYYY-MM-DD', true);
+      const end = moment(this.manualEndDate, 'YYYY-MM-DD', true);
+      if (!start.isValid() || !end.isValid() || end.isBefore(start, 'day')) {
+        return [];
+      }
+      const days = [];
+      const cursor = start.clone();
+      while (!cursor.isAfter(end, 'day')) {
+        days.push(cursor.format('YYYY-MM-DD'));
+        cursor.add(1, 'day');
+      }
+      return days;
+    },
+    precomputeButtonLabel() {
+      if (this.selectedDays.length <= 1) {
+        return this.$tr('Pre-calculate selected day');
+      }
+      return this.$tr('Pre-calculate selected range');
+    },
+    progressLabel() {
+      if (this.rangeDaysTotal <= 1) {
+        return this.$tr('Calculating...');
+      }
+      return this.$tr('Calculating day {done} of {total}...', {
+        done: Math.min(this.rangeDaysDone + 1, this.rangeDaysTotal),
+        total: this.rangeDaysTotal,
+      });
     },
     runFields() {
       return [
@@ -142,11 +190,11 @@ export default {
         this.saving = false;
       }
     },
-    selectedRange() {
+    selectedRange(day) {
       const [hour, minute] = String(this.settingsStore.startOfDay || '04:00')
         .split(':')
         .map(value => Number(value));
-      const start = moment(this.manualDate)
+      const start = moment(day)
         .hour(Number.isFinite(hour) ? hour : 4)
         .minute(Number.isFinite(minute) ? minute : 0)
         .second(0)
@@ -156,27 +204,67 @@ export default {
         end: start.clone().add(1, 'day').toISOString(),
       };
     },
-    async precomputeManualDay() {
+    async precomputeManualRange() {
+      const days = this.selectedDays;
+      if (days.length === 0) {
+        this.error = this.$tr('Select a valid date range');
+        return;
+      }
+
       this.precomputing = true;
       this.error = '';
       this.message = '';
+      this.rangeDaysDone = 0;
+      this.rangeDaysTotal = days.length;
       try {
-        const result = await this.fleetStore.precomputeSummary({
-          ...this.selectedRange(),
-          force: true,
-          start_of_day: this.settingsStore.startOfDay,
-        });
+        let usersDone = 0;
+        let usersTotal = 0;
+        let completedDays = 0;
+        const errors = [];
+        for (const day of days) {
+          const result = await this.fleetStore.precomputeSummary({
+            ...this.selectedRange(day),
+            force: true,
+            start_of_day: this.settingsStore.startOfDay,
+          });
+          if (result.status === 'busy') {
+            errors.push(
+              result.message || this.$tr('A fleet summary precompute is already running.')
+            );
+            break;
+          }
+          usersDone += result.users_done ?? result.run?.users_done ?? 0;
+          usersTotal += result.users_total ?? result.run?.users_total ?? 0;
+          completedDays += 1;
+          this.rangeDaysDone = completedDays;
+        }
         await this.fleetStore.loadSummaryPrecomputeConfig();
-        const done = result.users_done ?? result.run?.users_done ?? 0;
-        const total = result.users_total ?? result.run?.users_total ?? done;
-        this.message = this.$tr('Pre-calculation finished for {done} of {total} users', {
-          done,
-          total,
-        });
+
+        if (errors.length) {
+          this.error = errors.join(' ');
+          return;
+        }
+        if (days.length <= 1) {
+          this.message = this.$tr('Pre-calculation finished for {done} of {total} users', {
+            done: usersDone,
+            total: usersTotal || usersDone,
+          });
+        } else {
+          this.message = this.$tr(
+            'Pre-calculation finished for {days} days and {done} of {total} user summaries',
+            {
+              days: completedDays,
+              done: usersDone,
+              total: usersTotal || usersDone,
+            }
+          );
+        }
       } catch (error) {
         this.error = this.$tr('Unable to pre-calculate fleet summary');
       } finally {
         this.precomputing = false;
+        this.rangeDaysDone = 0;
+        this.rangeDaysTotal = 0;
       }
     },
     formatRange(range) {

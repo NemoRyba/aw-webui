@@ -257,6 +257,9 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Fleet summary pre-calculation': 'Flotten-Zusammenfassung vorberechnen',
     'Day boundary': 'Tagesgrenze',
     'Pre-calculate selected day': 'Ausgewaehlten Tag vorberechnen',
+    'Pre-calculate selected range': 'Ausgewaehlten Zeitraum vorberechnen',
+    'Calculating day {done} of {total}...': 'Berechne Tag {done} von {total}...',
+    'Select a valid date range': 'Waehle einen gueltigen Zeitraum',
     Started: 'Gestartet',
     'Unable to load fleet summary settings':
       'Einstellungen fuer Flotten-Zusammenfassung konnten nicht geladen werden',
@@ -265,6 +268,10 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
       'Einstellungen fuer Flotten-Zusammenfassung konnten nicht gespeichert werden',
     'Pre-calculation finished for {done} of {total} users':
       'Vorberechnung fuer {done} von {total} Benutzern abgeschlossen',
+    'Pre-calculation finished for {days} days and {done} of {total} user summaries':
+      'Vorberechnung fuer {days} Tage und {done} von {total} Benutzer-Zusammenfassungen abgeschlossen',
+    'A fleet summary precompute is already running.':
+      'Eine Flotten-Zusammenfassung wird bereits vorberechnet.',
     'Unable to pre-calculate fleet summary':
       'Flotten-Zusammenfassung konnte nicht vorberechnet werden',
     'Redmine read-only comparison': 'Redmine-Lesevergleich',
