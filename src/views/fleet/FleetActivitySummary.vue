@@ -131,6 +131,26 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
           icon(name="sync")
           span.ml-1 {{ $tr('Refresh') }}
 
+  div(v-else-if="rawEventLoadDeferred")
+    div.fleet-session-summary-strip.mb-3
+      div.fleet-session-summary-metrics
+        div.fleet-session-summary-metric
+          div.text-muted.small {{ $tr('Active session time') }}
+          div.fleet-session-summary-value {{ activeSessionDurationLabel }}
+        div.fleet-session-summary-metric(v-if="showNotAfkActiveSummary")
+          div.text-muted.small {{ $tr('Active after AFK subtraction') }}
+          div.fleet-session-summary-value.fleet-session-summary-value--secondary {{ notAfkActiveSessionDurationLabel }}
+      div.fleet-session-summary-help.text-muted.small
+        | {{ activeSessionSummaryHelp }}
+    b-alert(show variant="info")
+      div.fleet-large-range-alert
+        div
+          div.font-weight-bold {{ $tr('Detailed charts are paused for this large range.') }}
+          div.small
+            | {{ $tr('The app table below is already loaded. Detailed charts are kept off so this page stays responsive.') }}
+          div.small.mt-1
+            | {{ $tr('Use a range of 7 days or less for interactive timeline/category charts.') }}
+
   b-alert(v-else-if="activeWindowEvents.length === 0" show variant="info")
     | {{ $tr('No activity summary data found for the selected range.') }}
 
@@ -679,6 +699,8 @@ export default {
       loadProgressDone: 0,
       loadProgressTotal: 0,
       loadProgressLabel: '',
+      rawEventLoadDeferred: false,
+      rawEventLoadForced: false,
       showFilters: false,
       showAfkTime: !filterState.subtractAfkTime,
       countAudibleBrowserTime: filterState.countAudibleBrowserTime,
@@ -788,12 +810,24 @@ export default {
     loadProgressText() {
       const elapsed = `${this.$tr('Elapsed')}: ${this.loadElapsedSeconds}s`;
       if (this.loadProgressTotal > 0) {
-        return `${this.$tr('Loaded {done} of {total} bucket(s)', {
+        return `${this.$tr('Loaded {done} of {total} step(s)', {
           done: this.loadProgressDone,
           total: this.loadProgressTotal,
         })} - ${elapsed}`;
       }
       return `${this.$tr('Preparing data load')} - ${elapsed}`;
+    },
+    rawEventRangeHours() {
+      if (!this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
+        return 0;
+      }
+      return Math.max(0, this.rangeEnd.diff(this.rangeStart, 'hours', true));
+    },
+    shouldDeferRawEventLoad() {
+      return this.rawEventRangeHours > 24 * 7;
+    },
+    shouldChunkRawEventLoad() {
+      return this.rawEventRangeHours > 72;
     },
     isSingleDayRange() {
       if (!this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
@@ -2086,6 +2120,8 @@ export default {
       this.loadRequestId += 1;
       this.loading = false;
       this.loadCancelled = true;
+      this.rawEventLoadForced = false;
+      this.rawEventLoadDeferred = this.shouldDeferRawEventLoad;
       this.stopLoadTimer();
       this.resetLoadProgress();
       if (!options.silent) {
@@ -2094,9 +2130,10 @@ export default {
       this.abortClientRequests('Fleet activity summary load cancelled');
     },
     restartRawEventLoad() {
+      const force = this.rawEventLoadForced;
       this.cancelRawEventLoad({ silent: true });
       this.$nextTick(() => {
-        this.loadRawEvents();
+        this.loadRawEvents({ force });
       });
     },
     syncShortAfkThresholdDefaultToMax() {
@@ -2417,6 +2454,19 @@ export default {
 
       this.closeTimelineDetailWindow();
 
+      if (this.shouldDeferRawEventLoad && options.force !== true) {
+        this.loading = false;
+        this.loadError = '';
+        this.loadCancelled = false;
+        this.rawEventLoadDeferred = true;
+        this.rawEventLoadForced = false;
+        this.resetLoadProgress();
+        this.activeWindowEvents = [];
+        this.rawTimelineBuckets = [];
+        this.selectedDailyWatcherKeys = [];
+        return false;
+      }
+
       const showGlobalLoading = options.showGlobalLoading !== false;
       const requestKey = this.reloadKey;
       const requestId = this.loadRequestId + 1;
@@ -2427,6 +2477,8 @@ export default {
       }
       this.loadError = '';
       this.loadCancelled = false;
+      this.rawEventLoadDeferred = false;
+      this.rawEventLoadForced = options.force === true;
       this.resetLoadProgress();
 
       try {
@@ -2524,11 +2576,15 @@ export default {
         return this.isSummaryBucketCandidate(bucket);
       });
 
-      this.loadProgressTotal = candidateBuckets.length;
+      const workload = candidateBuckets.flatMap(bucket =>
+        this.eventLoadRangesForBucket(bucket).map(range => ({ bucket, range }))
+      );
+
+      this.loadProgressTotal = workload.length;
       this.loadProgressDone = 0;
       this.loadProgressLabel = '';
 
-      const buckets = [];
+      const bucketsById = new Map();
       for (const bucket of candidateBuckets) {
         if (
           options.requestId !== undefined &&
@@ -2537,19 +2593,90 @@ export default {
           return [];
         }
 
-        this.loadProgressLabel = String(bucket.id || '');
-        buckets.push(
-          await this.bucketsStore.getBucketWithEvents({
-            id: bucket.id,
-            start: this.rangeStart.format(),
-            end: this.rangeEnd.format(),
-          })
+        bucketsById.set(
+          bucket.id,
+          await this.loadBucketWithEventsInRanges(
+            bucket,
+            this.eventLoadRangesForBucket(bucket),
+            options
+          )
         );
-        this.loadProgressDone += 1;
       }
 
       this.loadProgressLabel = '';
-      return buckets;
+      return candidateBuckets.map(bucket => bucketsById.get(bucket.id)).filter(Boolean);
+    },
+    async loadBucketWithEventsInRanges(bucket, ranges, options: any = {}) {
+      const loadedBucket = _.cloneDeep(this.bucketsStore.getBucket(bucket.id) || bucket);
+      const events = [];
+
+      for (const range of ranges) {
+        if (
+          options.requestId !== undefined &&
+          !this.isCurrentLoadRequest(options.requestId, options.requestKey)
+        ) {
+          loadedBucket.events = this.deduplicateEvents(events);
+          return loadedBucket;
+        }
+
+        this.loadProgressLabel = range.label
+          ? `${String(bucket.id || '')} - ${range.label}`
+          : String(bucket.id || '');
+
+        const chunkEvents = await getClient().getEvents(bucket.id, {
+          start: range.start.format(),
+          end: range.end.format(),
+          limit: -1,
+        });
+        events.push(...(chunkEvents || []));
+        this.loadProgressDone += 1;
+      }
+
+      loadedBucket.events = this.deduplicateEvents(events);
+      return loadedBucket;
+    },
+    eventLoadRangesForBucket(bucket) {
+      if (!this.shouldChunkRawEventLoad || !this.isHeavyRawEventBucket(bucket)) {
+        return [
+          {
+            start: this.rangeStart.clone(),
+            end: this.rangeEnd.clone(),
+            label: '',
+          },
+        ];
+      }
+
+      const ranges = [];
+      let chunkStart = this.rangeStart.clone();
+      while (chunkStart.isBefore(this.rangeEnd)) {
+        const chunkEnd = moment.min(chunkStart.clone().add(1, 'day'), this.rangeEnd.clone());
+        ranges.push({
+          start: chunkStart.clone(),
+          end: chunkEnd.clone(),
+          label: chunkStart.format('MMM D'),
+        });
+        chunkStart = chunkEnd;
+      }
+      return ranges;
+    },
+    isHeavyRawEventBucket(bucket) {
+      return this.isWindowBucket(bucket) || this.isBrowserBucket(bucket);
+    },
+    deduplicateEvents(events) {
+      const seen = new Set();
+      return (events || []).filter(event => {
+        const key =
+          event && event.id !== undefined
+            ? `id:${event.id}`
+            : `${event?.timestamp || ''}|${event?.duration || ''}|${JSON.stringify(
+                event?.data || {}
+              )}`;
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
     },
     isSummaryBucketCandidate(bucket) {
       if (
@@ -4641,6 +4768,13 @@ export default {
   gap: 0.5rem;
 }
 
+.fleet-large-range-alert {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .fleet-filter-meta {
   line-height: 1.4;
 }
@@ -5020,6 +5154,10 @@ export default {
 }
 
 @media (max-width: 575.98px) {
+  .fleet-large-range-alert {
+    flex-direction: column;
+  }
+
   .fleet-session-summary-strip {
     align-items: flex-start;
     flex-direction: column;
