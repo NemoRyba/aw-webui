@@ -218,6 +218,8 @@ export interface IRedmineComparisonUser {
   ldap_source?: string;
   matched: boolean;
   status: string;
+  match_source?: string;
+  match_reason?: string;
   redmine_user_id?: number | null;
   redmine_login?: string;
   redmine_name?: string;
@@ -240,6 +242,40 @@ export interface IRedmineComparisonResponse {
   spent_on_range?: { from: string; to: string } | null;
   users: IRedmineComparisonUser[];
   totals: { redmine_hours: number; redmine_seconds: number };
+  message?: string;
+  error?: string;
+  error_code?: string;
+  error_detail?: string;
+}
+
+export interface IRedmineUser {
+  id: number;
+  login: string;
+  firstname: string;
+  lastname: string;
+  mail: string;
+  name: string;
+}
+
+export interface IRedmineUserMappingRow {
+  username: string;
+  email: string;
+  display_name?: string;
+  ldap_source?: string;
+  status: string;
+  match_source: string;
+  match_reason: string;
+  override_redmine_user_id?: number | null;
+  automatic_redmine_user?: IRedmineUser | null;
+  redmine_user?: IRedmineUser | null;
+}
+
+export interface IRedmineUserMappingResponse {
+  generated_at: string;
+  enabled: boolean;
+  users: IRedmineUserMappingRow[];
+  redmine_users: IRedmineUser[];
+  config?: { driver?: string; host?: string; database?: string };
   message?: string;
   error?: string;
   error_code?: string;

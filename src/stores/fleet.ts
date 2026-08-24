@@ -15,6 +15,7 @@ import {
   IFleetUserListItem,
   IRedmineComparisonResponse,
   IRedmineConfig,
+  IRedmineUserMappingResponse,
 } from '~/util/interfaces';
 
 const STORAGE_CACHE_PREFIX = 'aw-fleet-storage-status:';
@@ -43,6 +44,7 @@ interface State {
   summaryPrecomputeConfig: IFleetSummaryPrecomputeConfig | null;
   redmineConfig: IRedmineConfig | null;
   redmineComparison: IRedmineComparisonResponse | null;
+  redmineMappings: IRedmineUserMappingResponse | null;
   users: IFleetUserListItem[];
   devices: IFleetDeviceListItem[];
   deviceMetrics: IFleetDeviceMetricsResponse | null;
@@ -58,6 +60,7 @@ export const useFleetStore = defineStore('fleet', {
     summaryPrecomputeConfig: null,
     redmineConfig: null,
     redmineComparison: null,
+    redmineMappings: null,
     users: [],
     devices: [],
     deviceMetrics: null,
@@ -172,6 +175,26 @@ export const useFleetStore = defineStore('fleet', {
       const comparison = response.data;
       this.$patch({ redmineComparison: comparison });
       return comparison;
+    },
+
+    async loadRedmineMappings(): Promise<IRedmineUserMappingResponse> {
+      const response = await getClient().req.get('/0/admin/redmine/mappings');
+      const mappings = response.data;
+      this.$patch({ redmineMappings: mappings });
+      return mappings;
+    },
+
+    async saveRedmineMapping(
+      username: string,
+      redmineUserId: number | null
+    ): Promise<IRedmineUserMappingResponse> {
+      const response = await getClient().req.post('/0/admin/redmine/mappings', {
+        username,
+        redmine_user_id: redmineUserId,
+      });
+      const mappings = response.data;
+      this.$patch({ redmineMappings: mappings });
+      return mappings;
     },
 
     async loadUser(username: string, params = {}): Promise<IFleetUserDetail> {

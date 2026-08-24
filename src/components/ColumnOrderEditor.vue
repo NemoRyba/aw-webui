@@ -65,6 +65,10 @@ export default {
       type: Boolean,
       default: false,
     },
+    defaultHiddenColumns: {
+      type: Array,
+      default: () => [],
+    },
   },
   data() {
     return {
@@ -78,7 +82,11 @@ export default {
       return this.settingsStore.columnOrdersData?.[this.tableKey] || [];
     },
     savedHiddenColumns() {
-      return this.settingsStore.columnVisibilityData?.[this.tableKey] || [];
+      const visibility = this.settingsStore.columnVisibilityData || {};
+      if (Object.prototype.hasOwnProperty.call(visibility, this.tableKey)) {
+        return visibility[this.tableKey] || [];
+      }
+      return this.defaultHiddenColumns;
     },
     orderedFields() {
       return orderFields(this.fields, this.savedOrder);
@@ -100,12 +108,13 @@ export default {
       }));
     },
     resetOrder() {
+      const defaultHiddenColumns = new Set(this.defaultHiddenColumns);
       this.localFields = this.fields.map(field => ({
         key: field.key,
         label: field.label,
         controlLabel: field.controlLabel,
         hideable: field.hideable !== false,
-        hidden: false,
+        hidden: defaultHiddenColumns.has(field.key) && field.hideable !== false,
       }));
     },
     columnLabel(field) {
@@ -133,13 +142,15 @@ export default {
       const hiddenColumns = this.localFields
         .filter(field => field.hideable && field.hidden)
         .map(field => field.key);
+      const defaultHiddenColumns = [...this.defaultHiddenColumns].sort();
+      const sortedHiddenColumns = [...hiddenColumns].sort();
 
       if (JSON.stringify(defaultOrder) === JSON.stringify(currentOrder)) {
         delete nextColumnOrders[this.tableKey];
       } else {
         nextColumnOrders[this.tableKey] = currentOrder;
       }
-      if (hiddenColumns.length === 0) {
+      if (JSON.stringify(sortedHiddenColumns) === JSON.stringify(defaultHiddenColumns)) {
         delete nextColumnVisibility[this.tableKey];
       } else {
         nextColumnVisibility[this.tableKey] = hiddenColumns;

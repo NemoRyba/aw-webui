@@ -7,10 +7,10 @@ div
       h3.mb-0 {{ $tr('Zusammenfassung') }}
       div.text-muted.small(v-if="rangeLabel") {{ rangeLabel }}
     b-button-group.ml-auto(size="sm")
-      b-button(variant="outline-dark" @click="refresh" :disabled="loading || precomputing")
+      b-button(variant="outline-dark" @click="refresh" :disabled="!canLoadSummary || loading || precomputing")
         icon(name="sync")
         span.ml-1 {{ $tr('Refresh') }}
-      b-button(variant="outline-dark" @click="recalculate" :disabled="loading || precomputing")
+      b-button(variant="outline-dark" @click="recalculate" :disabled="!canLoadSummary || loading || precomputing")
         icon(name="sync")
         span.ml-1 {{ precomputing ? $tr('Calculating...') : $tr('Recalculate') }}
 
@@ -40,50 +40,58 @@ div
         label.small.text-muted(for="fleet-summary-end") {{ $tr('End') }}
         input#fleet-summary-end.form-control(type="date" v-model="endDate")
       div.col-md-4.mt-3.mt-md-4
-        b-button(variant="primary" @click="refresh" :disabled="loading || precomputing")
-          | {{ $tr('Apply range') }}
+        b-button(variant="primary" @click="refresh" :disabled="!canLoadSummary || loading || precomputing")
+          b-spinner.mr-1(v-if="loading || redmineLoading" small)
+          | {{ loading ? $tr('Loading...') : $tr('Load evaluation') }}
+
+    hr
+
+    div.fleet-summary-picker-header
+      div
+        h5.mb-0 {{ $tr('Users') }}
+        small.text-muted {{ selectedUsernames.length }} / {{ userOptions.length }}
+      div.fleet-summary-table-actions
+        b-form-input(
+          v-model.trim="userSearch"
+          size="sm"
+          :placeholder="$tr('Search users')"
+        )
+        b-button(size="sm" variant="outline-secondary" @click="selectAllUsers" :disabled="usersLoading")
+          | {{ $tr('Select all') }}
+        b-button(size="sm" variant="outline-secondary" @click="clearSelectedUsers" :disabled="usersLoading")
+          | {{ $tr('Select none') }}
+    div.aw-loading.mt-3(v-if="usersLoading")
+      | {{ $tr('Loading...') }}
+    b-alert.mt-3(v-else-if="usersLoadError" show variant="danger")
+      | {{ usersLoadError }}
+    div.fleet-summary-user-grid.mt-3(v-else)
+      b-form-checkbox.fleet-summary-user-option(
+        v-for="user in filteredUserOptions"
+        :key="user.username"
+        :checked="isUserSelected(user.username)"
+        @change="toggleUserSelection(user.username, $event)"
+      )
+        span.fleet-summary-user-name {{ user.username }}
+        span.fleet-summary-user-meta(v-if="user.last_seen")
+          | {{ user.last_seen | friendlytime }}
 
   b-alert(v-if="loadError" show variant="danger")
     | {{ loadError }}
   b-alert(v-if="redmineLoadError" show variant="warning")
     | {{ redmineLoadError }}
 
-  div.fleet-summary-total-strip.mb-3(v-if="summary")
-    div.fleet-summary-total
-      div.text-muted.small {{ $tr('Selected users') }}
-      div.fleet-summary-total-value {{ selectedSummaryRows.length }} / {{ summaryRows.length }}
-    div.fleet-summary-total
-      div.text-muted.small {{ $tr('ActivityWatch active session time') }}
-      div.fleet-summary-total-value {{ selectedActiveSeconds | friendlyduration }}
-    div.fleet-summary-total
-      div.text-muted.small
-        | {{ $tr('Redmine booked time') }}
-        b-spinner.ml-2(v-if="redmineLoading" small)
-      div.fleet-summary-total-value(v-if="redmineComparison && redmineComparison.enabled")
-        | {{ selectedRedmineSeconds | friendlyduration }}
-      div.fleet-summary-total-value(v-else) -
-    div.fleet-summary-total
-      div.text-muted.small {{ $tr('Difference') }}
-      div.fleet-summary-total-value(v-if="redmineComparison && redmineComparison.enabled")
-        | {{ formatSignedDuration(selectedDeltaSeconds) }}
-      div.fleet-summary-total-value(v-else) -
-
-  b-card
+  b-card(v-if="summary")
     div.fleet-summary-table-tools.mb-3
       div
-        h5.mb-0 {{ $tr('Users') }}
+        h5.mb-0 {{ $tr('Evaluation') }}
         div.text-muted.small(v-if="redmineLoadedAt")
           | {{ $tr('Redmine loaded') }} {{ redmineLoadedAt | friendlytime }}
       div.fleet-summary-table-actions
-        b-button(size="sm" variant="outline-secondary" @click="selectAllUsers")
-          | {{ $tr('Select all') }}
-        b-button(size="sm" variant="outline-secondary" @click="clearSelectedUsers")
-          | {{ $tr('Select none') }}
         b-button(
           size="sm"
           variant="outline-dark"
           @click="loadRedmineComparison"
-          :disabled="redmineLoading || selectedUsernames.length === 0"
+          :disabled="redmineLoading || summaryRows.length === 0"
         )
           b-spinner.mr-1(v-if="redmineLoading" small)
           | {{ redmineLoading ? $tr('Loading Redmine...') : $tr('Load Redmine') }}
@@ -91,6 +99,7 @@ div
         :table-key="tableKey"
         :fields="defaultFields"
         :allow-visibility="true"
+        :default-hidden-columns="defaultHiddenColumns"
       )
     div.aw-loading(v-if="loading")
       | {{ $tr('Loading...') }}
@@ -103,11 +112,6 @@ div
       :fields="fields"
       :empty-text="$tr('No users found')"
     )
-      template(v-slot:cell(selected)="data")
-        b-form-checkbox(
-          :checked="isUserSelected(data.item.username)"
-          @change="toggleUserSelection(data.item.username, $event)"
-        )
       template(v-slot:cell(username)="data")
         router-link(:to="'/fleet/users/' + encodeURIComponent(data.item.username)")
           | {{ data.item.username }}
@@ -120,8 +124,17 @@ div
           | {{ data.item.redmine_seconds | friendlyduration }}
         span(v-else) -
       template(v-slot:cell(redmine_projects)="data")
-        span(v-if="data.item.redmine_projects.length")
-          | {{ formatRedmineProjects(data.item.redmine_projects) }}
+        div.redmine-project-list(v-if="data.item.redmine_projects.length")
+          div.redmine-project-row(
+            v-for="project in visibleRedmineProjects(data.item.redmine_projects)"
+            :key="`${project.project_id}-${project.project_name}`"
+          )
+            span.redmine-project-name(:title="project.project_name || `#${project.project_id}`")
+              | {{ project.project_name || `#${project.project_id}` }}
+            span.redmine-project-time
+              | {{ project.seconds | friendlyduration }}
+          div.small.text-muted(v-if="remainingRedmineProjectCount(data.item.redmine_projects)")
+            | {{ $tr('+ {count} more', { count: remainingRedmineProjectCount(data.item.redmine_projects) }) }}
         span(v-else) -
       template(v-slot:cell(delta_seconds)="data")
         span(v-if="data.item.delta_seconds !== null")
@@ -130,6 +143,8 @@ div
       template(v-slot:cell(redmine_status)="data")
         b-badge(:variant="redmineStatusVariant(data.item.redmine_status)")
           | {{ $tr(data.item.redmine_status) }}
+        div.small.text-muted.redmine-match-reason(v-if="data.item.redmine_match_reason")
+          | {{ data.item.redmine_match_reason }}
       template(v-slot:cell(not_afk_active_seconds)="data")
         span(v-if="data.item.not_afk_active_seconds !== null")
           | {{ data.item.not_afk_active_seconds | friendlyduration }}
@@ -168,10 +183,13 @@ export default {
       startDate: moment().format('YYYY-MM-DD'),
       endDate: moment().format('YYYY-MM-DD'),
       loading: false,
+      usersLoading: false,
       precomputing: false,
       redmineLoading: false,
       loadError: '',
+      usersLoadError: '',
       redmineLoadError: '',
+      userSearch: '',
       selectedUsernames: [],
       selectionInitialized: false,
       selectionDebounceTimer: null,
@@ -193,11 +211,14 @@ export default {
     },
     defaultFields() {
       return [
-        { key: 'selected', label: '', controlLabel: this.$tr('Selection'), hideable: false },
         { key: 'username', label: this.$tr('Username'), sortable: true, hideable: false },
         { key: 'active_seconds', label: this.$tr('Active session time'), sortable: true },
         { key: 'redmine_seconds', label: this.$tr('Redmine booked time'), sortable: true },
-        { key: 'redmine_projects', label: this.$tr('Redmine projects') },
+        {
+          key: 'redmine_projects',
+          label: this.$tr('Redmine projects'),
+          tdClass: 'fleet-summary-projects-cell',
+        },
         { key: 'delta_seconds', label: this.$tr('Difference'), sortable: true },
         { key: 'redmine_status', label: this.$tr('Redmine'), sortable: true },
         {
@@ -210,12 +231,33 @@ export default {
         { key: 'last_seen', label: this.$tr('Last seen'), sortable: true },
       ];
     },
+    defaultHiddenColumns() {
+      return ['not_afk_active_seconds', 'active_sessions', 'calculated_at', 'last_seen'];
+    },
     fields() {
       const orderedFields = orderFields(
         this.defaultFields,
         this.settingsStore.columnOrdersData?.[this.tableKey]
       );
-      return visibleFields(orderedFields, this.settingsStore.columnVisibilityData?.[this.tableKey]);
+      const visibility = this.settingsStore.columnVisibilityData || {};
+      const hiddenColumns = Object.prototype.hasOwnProperty.call(visibility, this.tableKey)
+        ? visibility[this.tableKey]
+        : this.defaultHiddenColumns;
+      return visibleFields(orderedFields, hiddenColumns);
+    },
+    userOptions() {
+      return this.fleetStore.users || [];
+    },
+    filteredUserOptions() {
+      const query = this.userSearch.toLowerCase();
+      if (!query) {
+        return this.userOptions;
+      }
+      return this.userOptions.filter(user =>
+        String(user.username || '')
+          .toLowerCase()
+          .includes(query)
+      );
     },
     redmineComparison() {
       return this.fleetStore.redmineComparison;
@@ -236,17 +278,13 @@ export default {
         ...this.summaryRowMetrics(user),
       }));
     },
-    selectedSummaryRows() {
-      return this.summaryRows.filter(row => this.selectedUsernameSet.has(row.username));
-    },
-    selectedActiveSeconds() {
-      return this.selectedSummaryRows.reduce((total, row) => total + row.active_seconds, 0);
-    },
-    selectedRedmineSeconds() {
-      return this.selectedSummaryRows.reduce((total, row) => total + (row.redmine_seconds || 0), 0);
-    },
-    selectedDeltaSeconds() {
-      return this.selectedActiveSeconds - this.selectedRedmineSeconds;
+    canLoadSummary() {
+      return (
+        this.selectedUsernames.length > 0 &&
+        moment(this.startDate, 'YYYY-MM-DD', true).isValid() &&
+        moment(this.endDate, 'YYYY-MM-DD', true).isValid() &&
+        !this.usersLoading
+      );
     },
     canShiftNextDay() {
       const end = moment(this.endDate, 'YYYY-MM-DD', true);
@@ -256,11 +294,19 @@ export default {
       return end.isBefore(moment().startOf('day'), 'day');
     },
   },
-  beforeDestroy() {
-    this.clearSelectionDebounce();
+  watch: {
+    startDate() {
+      this.clearLoadedResults();
+    },
+    endDate() {
+      this.clearLoadedResults();
+    },
   },
   async mounted() {
-    await this.refresh();
+    await this.loadUsers();
+  },
+  beforeDestroy() {
+    this.clearSelectionDebounce();
   },
   methods: {
     summaryRowMetrics(user) {
@@ -282,6 +328,8 @@ export default {
         redmine_projects: redmineRow?.projects || [],
         delta_seconds: redmineSeconds === null ? null : activeSeconds - redmineSeconds,
         redmine_status: redmineRow?.status || 'not_loaded',
+        redmine_match_source: redmineRow?.match_source || '',
+        redmine_match_reason: redmineRow?.match_reason || '',
         calculated_at: user.summary_cache?.calculated_at || null,
       };
     },
@@ -292,6 +340,7 @@ export default {
         start: start.toISOString(),
         end: end.toISOString(),
         exclude_inactive_session_afk: 'true',
+        usernames: this.selectedUsernames,
       };
     },
     rangeBoundary(date) {
@@ -316,10 +365,9 @@ export default {
 
       this.startDate = start.add(days, 'days').format('YYYY-MM-DD');
       this.endDate = end.add(days, 'days').format('YYYY-MM-DD');
-      await this.refresh();
     },
     defaultSelectUsers() {
-      const usernames = (this.summary?.users || []).map(user => user.username);
+      const usernames = this.userOptions.map(user => user.username);
       if (!this.selectionInitialized) {
         this.selectedUsernames = usernames;
         this.selectionInitialized = true;
@@ -332,16 +380,14 @@ export default {
       return this.selectedUsernameSet.has(username);
     },
     selectAllUsers() {
-      this.selectedUsernames = (this.summary?.users || []).map(user => user.username);
+      this.selectedUsernames = this.userOptions.map(user => user.username);
       this.selectionInitialized = true;
-      this.queueRedmineComparisonLoad();
+      this.clearLoadedResults();
     },
     clearSelectedUsers() {
       this.selectedUsernames = [];
       this.selectionInitialized = true;
-      this.redmineLoadError = '';
-      this.redmineLoadedAt = '';
-      this.fleetStore.$patch({ redmineComparison: null });
+      this.clearLoadedResults();
       this.clearSelectionDebounce();
     },
     toggleUserSelection(username, selected) {
@@ -353,7 +399,7 @@ export default {
       }
       this.selectedUsernames = Array.from(next);
       this.selectionInitialized = true;
-      this.queueRedmineComparisonLoad();
+      this.clearLoadedResults();
     },
     clearSelectionDebounce() {
       if (this.selectionDebounceTimer) {
@@ -367,13 +413,36 @@ export default {
         this.loadRedmineComparison();
       }, 500);
     },
+    clearLoadedResults() {
+      this.loadError = '';
+      this.redmineLoadError = '';
+      this.redmineLoadedAt = '';
+      this.fleetStore.$patch({
+        summary: null,
+        redmineComparison: null,
+      });
+    },
+    async loadUsers() {
+      this.usersLoading = true;
+      this.usersLoadError = '';
+      try {
+        await this.fleetStore.loadUsers();
+        this.defaultSelectUsers();
+      } catch (error) {
+        this.usersLoadError = this.$tr('Unable to load fleet users');
+      } finally {
+        this.usersLoading = false;
+      }
+    },
     async refresh() {
+      if (!this.canLoadSummary) {
+        return;
+      }
       this.loading = true;
       this.loadError = '';
       let loadedSummary = false;
       try {
         await this.fleetStore.loadSummary(this.buildParams());
-        this.defaultSelectUsers();
         this.fleetStore.$patch({ redmineComparison: null });
         this.redmineLoadedAt = '';
         loadedSummary = true;
@@ -387,11 +456,15 @@ export default {
       }
     },
     async recalculate() {
+      if (!this.canLoadSummary) {
+        return;
+      }
       this.precomputing = true;
       this.loadError = '';
       try {
         await this.fleetStore.precomputeSummary({
           ...this.buildParams(),
+          usernames: this.selectedUsernames,
           force: true,
           start_of_day: this.settingsStore.startOfDay,
         });
@@ -404,7 +477,7 @@ export default {
     },
     async loadRedmineComparison() {
       this.clearSelectionDebounce();
-      if (this.selectedUsernames.length === 0) {
+      if (this.summaryRows.length === 0) {
         this.fleetStore.$patch({ redmineComparison: null });
         this.redmineLoadedAt = '';
         this.redmineLoadError = '';
@@ -416,7 +489,7 @@ export default {
       try {
         const comparison = await this.fleetStore.loadRedmineComparison({
           ...this.buildParams(),
-          usernames: this.selectedUsernames,
+          usernames: this.summaryRows.map(row => row.username),
         });
         this.redmineLoadedAt = comparison.generated_at;
         if (comparison.error) {
@@ -442,24 +515,22 @@ export default {
       }
       return `${value > 0 ? '+' : '-'}${seconds_to_duration(Math.abs(value))}`;
     },
-    formatRedmineProjects(projects) {
-      const visibleProjects = [...(projects || [])]
-        .sort((left, right) => Number(right.seconds || 0) - Number(left.seconds || 0))
-        .slice(0, 3)
-        .map(project => {
-          const name = project.project_name || `#${project.project_id}`;
-          return `${name}: ${seconds_to_duration(Number(project.seconds || 0))}`;
-        });
-      const remaining = Math.max(0, (projects || []).length - visibleProjects.length);
-      if (remaining > 0) {
-        visibleProjects.push(this.$tr('+ {count} more', { count: remaining }));
-      }
-      return visibleProjects.join(', ');
+    sortedRedmineProjects(projects) {
+      return [...(projects || [])].sort(
+        (left, right) => Number(right.seconds || 0) - Number(left.seconds || 0)
+      );
+    },
+    visibleRedmineProjects(projects) {
+      return this.sortedRedmineProjects(projects).slice(0, 3);
+    },
+    remainingRedmineProjectCount(projects) {
+      return Math.max(0, this.sortedRedmineProjects(projects).length - 3);
     },
     redmineStatusVariant(redmineStatus) {
       const variants = {
         matched: 'success',
         missing_email: 'warning',
+        manual_missing: 'danger',
         no_redmine_user: 'warning',
         not_loaded: 'secondary',
       };
@@ -475,23 +546,33 @@ export default {
   justify-content: flex-start;
 }
 
-.fleet-summary-total-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+.fleet-summary-picker-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.75rem;
 }
 
-.fleet-summary-total {
-  padding: 0.75rem 0.9rem;
-  border: 1px solid rgba(127, 127, 127, 0.2);
-  border-radius: 0.45rem;
-  background: rgba(127, 127, 127, 0.06);
+.fleet-summary-user-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.5rem 1rem;
 }
 
-.fleet-summary-total-value {
-  font-size: 1.25rem;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
+.fleet-summary-user-option {
+  min-width: 0;
+}
+
+.fleet-summary-user-name {
+  display: block;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.fleet-summary-user-meta {
+  display: block;
+  color: var(--gray);
+  font-size: 0.8rem;
 }
 
 .fleet-summary-table-tools {
@@ -507,5 +588,41 @@ export default {
   align-items: center;
   gap: 0.5rem;
   margin-left: auto;
+}
+
+.redmine-project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 22rem;
+}
+
+.redmine-project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: start;
+}
+
+.redmine-project-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.redmine-project-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.redmine-match-reason {
+  max-width: 18rem;
+  overflow-wrap: anywhere;
+}
+
+::v-deep .fleet-summary-projects-cell {
+  max-width: 24rem;
+  white-space: normal;
 }
 </style>
