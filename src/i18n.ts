@@ -168,15 +168,10 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Preparing data load': 'Ladevorgang wird vorbereitet',
     'Loaded {done} of {total} bucket(s)': '{done} von {total} Bucket(s) geladen',
     'Loaded {done} of {total} step(s)': '{done} von {total} Schritt(en) geladen',
+    'Server aggregate': 'Server-Aggregat',
     Elapsed: 'Vergangen',
     'Current bucket': 'Aktueller Bucket',
     'Loading cancelled': 'Ladevorgang abgebrochen',
-    'Detailed charts are paused for this large range.':
-      'Detaillierte Diagramme sind fuer diesen grossen Zeitraum pausiert.',
-    'The app table below is already loaded. Detailed charts are kept off so this page stays responsive.':
-      'Die App-Tabelle darunter ist bereits geladen. Detaillierte Diagramme bleiben aus, damit die Seite bedienbar bleibt.',
-    'Use a range of 7 days or less for interactive timeline/category charts.':
-      'Nutze einen Zeitraum von 7 Tagen oder weniger fuer interaktive Zeitachsen- und Kategorie-Diagramme.',
     'Search activity': 'Aktivität suchen',
     'Filter app, title, URL, device...': 'App, Titel, URL, Gerät filtern...',
     'Show AFK time': 'AFK-Zeit anzeigen',

@@ -131,26 +131,6 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
           icon(name="sync")
           span.ml-1 {{ $tr('Refresh') }}
 
-  div(v-else-if="rawEventLoadDeferred")
-    div.fleet-session-summary-strip.mb-3
-      div.fleet-session-summary-metrics
-        div.fleet-session-summary-metric
-          div.text-muted.small {{ $tr('Active session time') }}
-          div.fleet-session-summary-value {{ activeSessionDurationLabel }}
-        div.fleet-session-summary-metric(v-if="showNotAfkActiveSummary")
-          div.text-muted.small {{ $tr('Active after AFK subtraction') }}
-          div.fleet-session-summary-value.fleet-session-summary-value--secondary {{ notAfkActiveSessionDurationLabel }}
-      div.fleet-session-summary-help.text-muted.small
-        | {{ activeSessionSummaryHelp }}
-    b-alert(show variant="info")
-      div.fleet-large-range-alert
-        div
-          div.font-weight-bold {{ $tr('Detailed charts are paused for this large range.') }}
-          div.small
-            | {{ $tr('The app table below is already loaded. Detailed charts are kept off so this page stays responsive.') }}
-          div.small.mt-1
-            | {{ $tr('Use a range of 7 days or less for interactive timeline/category charts.') }}
-
   b-alert(v-else-if="activeWindowEvents.length === 0" show variant="info")
     | {{ $tr('No activity summary data found for the selected range.') }}
 
@@ -699,8 +679,7 @@ export default {
       loadProgressDone: 0,
       loadProgressTotal: 0,
       loadProgressLabel: '',
-      rawEventLoadDeferred: false,
-      rawEventLoadForced: false,
+      aggregatedActivitySummary: null,
       showFilters: false,
       showAfkTime: !filterState.subtractAfkTime,
       countAudibleBrowserTime: filterState.countAudibleBrowserTime,
@@ -823,7 +802,7 @@ export default {
       }
       return Math.max(0, this.rangeEnd.diff(this.rangeStart, 'hours', true));
     },
-    shouldDeferRawEventLoad() {
+    shouldUseAggregatedActivitySummary() {
       return this.rawEventRangeHours > 24 * 7;
     },
     shouldChunkRawEventLoad() {
@@ -1038,6 +1017,9 @@ export default {
       );
     },
     countedWindowEventCount() {
+      if (this.aggregatedActivitySummary?.stats?.source_event_count !== undefined) {
+        return Number(this.aggregatedActivitySummary.stats.source_event_count || 0);
+      }
       return this.summaryWindowEvents.length;
     },
     filteredWindowEvents() {
@@ -1138,6 +1120,29 @@ export default {
       };
     },
     timelineBins() {
+      if (this.aggregatedActivitySummary?.bins?.length) {
+        return this.aggregatedActivitySummary.bins
+          .map(bin => {
+            const start = moment(bin.start);
+            const end = moment(bin.end);
+            if (!start.isValid() || !end.isValid() || !end.isAfter(start)) {
+              return null;
+            }
+            return {
+              start,
+              end,
+              label: this.formatBinLabel(
+                start,
+                end,
+                bin.unit || this.aggregatedActivitySummary.bin_unit
+              ),
+              activeSessionSeconds: Number(bin.active_session_seconds || 0),
+              notAfkActiveSessionSeconds: Number(bin.not_afk_active_session_seconds || 0),
+            };
+          })
+          .filter(Boolean);
+      }
+
       if (!this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
         return [];
       }
@@ -1362,6 +1367,10 @@ export default {
       return this.mergeIntervals(intervals);
     },
     timelineActiveSessionSecondsByBin() {
+      if (this.aggregatedActivitySummary?.bins?.length) {
+        return this.timelineBins.map(bin => Math.round(Number(bin.activeSessionSeconds || 0)));
+      }
+
       const totals = Array.from({ length: this.timelineBins.length }, () => 0);
       this.activeSessionIntervals.forEach(interval => {
         this.timelineBins.forEach((bin, index) => {
@@ -1371,6 +1380,12 @@ export default {
       return totals.map(value => Math.round(value));
     },
     timelineNotAfkActiveSessionSecondsByBin() {
+      if (this.aggregatedActivitySummary?.bins?.length) {
+        return this.timelineBins.map(bin =>
+          Math.round(Number(bin.notAfkActiveSessionSeconds || 0))
+        );
+      }
+
       const totals = Array.from({ length: this.timelineBins.length }, () => 0);
       (this.notAfkActiveSessionIntervals || []).forEach(interval => {
         this.timelineBins.forEach((bin, index) => {
@@ -1407,6 +1422,9 @@ export default {
       };
     },
     localActiveSessionSeconds() {
+      if (this.aggregatedActivitySummary?.bins?.length) {
+        return null;
+      }
       if (!this.rawTimelineBuckets || this.rawTimelineBuckets.length === 0) {
         return null;
       }
@@ -1417,6 +1435,11 @@ export default {
       );
     },
     activeSessionSeconds() {
+      if (this.aggregatedActivitySummary?.bins?.length) {
+        return _.sumBy(this.aggregatedActivitySummary.bins, (bin: any) =>
+          Number(bin.active_session_seconds || 0)
+        );
+      }
       if (this.preferBackendSessionTotals && this.user?.totals?.active_seconds !== undefined) {
         return this.user.totals.active_seconds;
       }
@@ -1459,6 +1482,9 @@ export default {
       return this.mergeIntervals(intervals);
     },
     localNotAfkActiveSessionSeconds() {
+      if (this.aggregatedActivitySummary?.bins?.length) {
+        return null;
+      }
       const intervals = this.notAfkActiveSessionIntervals;
       if (intervals === null) {
         return null;
@@ -1466,6 +1492,11 @@ export default {
       return _.sum(intervals.map(interval => interval.end.diff(interval.start, 'seconds', true)));
     },
     notAfkActiveSessionSeconds() {
+      if (this.aggregatedActivitySummary?.bins?.length) {
+        return _.sumBy(this.aggregatedActivitySummary.bins, (bin: any) =>
+          Number(bin.not_afk_active_session_seconds || 0)
+        );
+      }
       if (
         this.preferBackendSessionTotals &&
         this.user?.totals?.not_afk_active_seconds !== undefined
@@ -2120,8 +2151,6 @@ export default {
       this.loadRequestId += 1;
       this.loading = false;
       this.loadCancelled = true;
-      this.rawEventLoadForced = false;
-      this.rawEventLoadDeferred = this.shouldDeferRawEventLoad;
       this.stopLoadTimer();
       this.resetLoadProgress();
       if (!options.silent) {
@@ -2130,10 +2159,9 @@ export default {
       this.abortClientRequests('Fleet activity summary load cancelled');
     },
     restartRawEventLoad() {
-      const force = this.rawEventLoadForced;
       this.cancelRawEventLoad({ silent: true });
       this.$nextTick(() => {
-        this.loadRawEvents({ force });
+        this.loadRawEvents();
       });
     },
     syncShortAfkThresholdDefaultToMax() {
@@ -2454,19 +2482,6 @@ export default {
 
       this.closeTimelineDetailWindow();
 
-      if (this.shouldDeferRawEventLoad && options.force !== true) {
-        this.loading = false;
-        this.loadError = '';
-        this.loadCancelled = false;
-        this.rawEventLoadDeferred = true;
-        this.rawEventLoadForced = false;
-        this.resetLoadProgress();
-        this.activeWindowEvents = [];
-        this.rawTimelineBuckets = [];
-        this.selectedDailyWatcherKeys = [];
-        return false;
-      }
-
       const showGlobalLoading = options.showGlobalLoading !== false;
       const requestKey = this.reloadKey;
       const requestId = this.loadRequestId + 1;
@@ -2477,13 +2492,30 @@ export default {
       }
       this.loadError = '';
       this.loadCancelled = false;
-      this.rawEventLoadDeferred = false;
-      this.rawEventLoadForced = options.force === true;
+      this.aggregatedActivitySummary = null;
+      this.activeWindowEvents = [];
+      this.rawTimelineBuckets = [];
+      this.selectedDailyWatcherKeys = [];
       this.resetLoadProgress();
 
       try {
         if (!this.categoryStore.classes || this.categoryStore.classes.length === 0) {
           this.categoryStore.load();
+        }
+
+        if (this.shouldUseAggregatedActivitySummary) {
+          const summary = await this.loadAggregatedActivitySummary({ requestId, requestKey });
+
+          if (!this.isCurrentLoadRequest(requestId, requestKey)) {
+            return false;
+          }
+
+          this.aggregatedActivitySummary = summary;
+          this.activeWindowEvents = summary?.events || [];
+          this.rawTimelineBuckets = [];
+          this.selectedDailyWatcherKeys = [];
+          this.requestTimelineAutoScroll();
+          return true;
         }
 
         const buckets = await this.loadSummaryBuckets({ requestId, requestKey });
@@ -2507,6 +2539,7 @@ export default {
         }
         console.error('Unable to load fleet activity summary:', error);
         this.loadError = this.$tr('Unable to load activity summary');
+        this.aggregatedActivitySummary = null;
         this.activeWindowEvents = [];
         this.rawTimelineBuckets = [];
         this.selectedDailyWatcherKeys = [];
@@ -2566,6 +2599,41 @@ export default {
     },
     bumpPanelRefreshKey(panelKey) {
       this.$set(this.panelRefreshKeys, panelKey, Number(this.panelRefreshKeys[panelKey] || 0) + 1);
+    },
+    async loadAggregatedActivitySummary(options: any = {}) {
+      this.loadProgressTotal = 1;
+      this.loadProgressDone = 0;
+      this.loadProgressLabel = this.$tr('Server aggregate');
+      const binCount = Math.max(1, this.timelineBins.length);
+      const maxRowsPerBin = binCount > 180 ? 32 : binCount > 90 ? 48 : binCount > 45 ? 80 : 120;
+
+      const params: Record<string, string> = {
+        start: this.rangeStart.format(),
+        end: this.rangeEnd.format(),
+        include_afk_time: this.showAfkTime ? 'true' : 'false',
+        exclude_inactive_session_afk: this.user?.filters?.exclude_inactive_session_afk
+          ? 'true'
+          : 'false',
+        max_rows_per_bin: String(maxRowsPerBin),
+      };
+      if (this.selectedDeviceIds.length > 0) {
+        params.device_ids = this.selectedDeviceIds.join(',');
+      }
+
+      const response = await getClient().req.get(
+        `/0/fleet/users/${encodeURIComponent(this.user.username)}/activity-summary`,
+        { params }
+      );
+      if (
+        options.requestId !== undefined &&
+        !this.isCurrentLoadRequest(options.requestId, options.requestKey)
+      ) {
+        return null;
+      }
+
+      this.loadProgressDone = 1;
+      this.loadProgressLabel = '';
+      return response.data || null;
     },
     async loadSummaryBuckets(options: any = {}) {
       await this.bucketsStore.ensureLoaded();
