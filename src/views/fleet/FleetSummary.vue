@@ -90,6 +90,7 @@ div
       column-order-editor.ml-auto(
         :table-key="tableKey"
         :fields="defaultFields"
+        :allow-visibility="true"
       )
     div.aw-loading(v-if="loading")
       | {{ $tr('Loading...') }}
@@ -151,7 +152,7 @@ import 'vue-awesome/icons/sync';
 
 import { useFleetStore } from '~/stores/fleet';
 import { useSettingsStore } from '~/stores/settings';
-import { orderFields } from '~/util/columnOrder';
+import { orderFields, visibleFields } from '~/util/columnOrder';
 import { seconds_to_duration } from '~/util/time';
 
 export default {
@@ -192,8 +193,8 @@ export default {
     },
     defaultFields() {
       return [
-        { key: 'selected', label: '' },
-        { key: 'username', label: this.$tr('Username'), sortable: true },
+        { key: 'selected', label: '', controlLabel: this.$tr('Selection'), hideable: false },
+        { key: 'username', label: this.$tr('Username'), sortable: true, hideable: false },
         { key: 'active_seconds', label: this.$tr('Active session time'), sortable: true },
         { key: 'redmine_seconds', label: this.$tr('Redmine booked time'), sortable: true },
         { key: 'redmine_projects', label: this.$tr('Redmine projects') },
@@ -210,7 +211,11 @@ export default {
       ];
     },
     fields() {
-      return orderFields(this.defaultFields, this.settingsStore.columnOrdersData?.[this.tableKey]);
+      const orderedFields = orderFields(
+        this.defaultFields,
+        this.settingsStore.columnOrdersData?.[this.tableKey]
+      );
+      return visibleFields(orderedFields, this.settingsStore.columnVisibilityData?.[this.tableKey]);
     },
     redmineComparison() {
       return this.fleetStore.redmineComparison;

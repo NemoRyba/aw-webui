@@ -46,6 +46,7 @@ interface State {
   };
   always_active_pattern: string;
   columnOrdersData: Record<string, string[]>;
+  columnVisibilityData: Record<string, string[]>;
   classes: Category[];
   views: View[];
 
@@ -89,6 +90,7 @@ export const useSettingsStore = defineStore('settings', {
 
     always_active_pattern: '',
     columnOrdersData: {},
+    columnVisibilityData: {},
     classes: defaultCategories,
     views: defaultViews,
 

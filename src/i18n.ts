@@ -16,7 +16,13 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     English: 'Englisch',
     Columns: 'Spalten',
     'Reorder columns': 'Spalten neu anordnen',
+    'Configure columns': 'Spalten konfigurieren',
     'Drag columns to change the order': 'Spalten per Ziehen neu anordnen',
+    'Drag columns to change the order and choose which columns are visible':
+      'Spalten per Ziehen neu anordnen und Sichtbarkeit auswaehlen',
+    'Show column': 'Spalte anzeigen',
+    'Column is always visible': 'Spalte ist immer sichtbar',
+    Selection: 'Auswahl',
     'Reset to default': 'Auf Standard zurücksetzen',
     Close: 'Schließen',
     'Resize window': 'Fenstergroesse aendern',

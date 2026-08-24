@@ -18,3 +18,12 @@ export function orderFields<T extends IColumnField>(fields: T[], order?: string[
   const remainder = fields.filter(field => !seen.has(field.key));
   return [...ordered, ...remainder];
 }
+
+export function visibleFields<T extends IColumnField>(fields: T[], hidden?: string[]): T[] {
+  if (!hidden || hidden.length === 0) {
+    return fields;
+  }
+
+  const hiddenKeys = new Set(hidden);
+  return fields.filter(field => field.hideable === false || !hiddenKeys.has(field.key));
+}

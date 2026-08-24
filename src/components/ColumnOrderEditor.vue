@@ -6,12 +6,12 @@ div.d-inline-block
   b-modal(
     v-model="show"
     size="sm"
-    :title="$tr('Reorder columns')"
+    :title="allowVisibility ? $tr('Configure columns') : $tr('Reorder columns')"
     hide-footer
     @show="resetLocalFields"
   )
     div.small.text-muted.mb-3
-      | {{ $tr('Drag columns to change the order') }}
+      | {{ allowVisibility ? $tr('Drag columns to change the order and choose which columns are visible') : $tr('Drag columns to change the order') }}
 
     draggable(v-model="localFields" handle=".drag-handle")
       div.d-flex.align-items-center.justify-content-between.border.rounded.px-3.py-2.mb-2(
@@ -21,7 +21,15 @@ div.d-inline-block
         span.drag-handle.mr-3(style="cursor: grab; user-select: none;")
           | ≡
         span.flex-grow-1
-          | {{ field.label || field.key }}
+          | {{ columnLabel(field) }}
+        b-form-checkbox.ml-3(
+          v-if="allowVisibility"
+          :checked="!field.hidden"
+          switch
+          :disabled="!field.hideable"
+          :title="field.hideable ? $tr('Show column') : $tr('Column is always visible')"
+          @change="toggleVisibility(field.key, $event)"
+        )
 
     div.d-flex.justify-content-between.mt-3
       b-button(size="sm" variant="outline-secondary" @click="resetOrder")
@@ -53,6 +61,10 @@ export default {
       type: Array,
       required: true,
     },
+    allowVisibility: {
+      type: Boolean,
+      default: false,
+    },
   },
   data() {
     return {
@@ -65,6 +77,9 @@ export default {
     savedOrder() {
       return this.settingsStore.columnOrdersData?.[this.tableKey] || [];
     },
+    savedHiddenColumns() {
+      return this.settingsStore.columnVisibilityData?.[this.tableKey] || [];
+    },
     orderedFields() {
       return orderFields(this.fields, this.savedOrder);
     },
@@ -75,32 +90,64 @@ export default {
       this.show = true;
     },
     resetLocalFields() {
+      const hiddenColumns = new Set(this.savedHiddenColumns);
       this.localFields = this.orderedFields.map(field => ({
         key: field.key,
         label: field.label,
+        controlLabel: field.controlLabel,
+        hideable: field.hideable !== false,
+        hidden: hiddenColumns.has(field.key) && field.hideable !== false,
       }));
     },
     resetOrder() {
       this.localFields = this.fields.map(field => ({
         key: field.key,
         label: field.label,
+        controlLabel: field.controlLabel,
+        hideable: field.hideable !== false,
+        hidden: false,
       }));
+    },
+    columnLabel(field) {
+      return field.controlLabel || field.label || field.key;
+    },
+    toggleVisibility(key, visible) {
+      this.localFields = this.localFields.map(field =>
+        field.key === key
+          ? {
+              ...field,
+              hidden: field.hideable ? !visible : false,
+            }
+          : field
+      );
     },
     async save() {
       const nextColumnOrders = {
         ...(this.settingsStore.columnOrdersData || {}),
       };
+      const nextColumnVisibility = {
+        ...(this.settingsStore.columnVisibilityData || {}),
+      };
       const defaultOrder = this.fields.map(field => field.key);
       const currentOrder = this.localFields.map(field => field.key);
+      const hiddenColumns = this.localFields
+        .filter(field => field.hideable && field.hidden)
+        .map(field => field.key);
 
       if (JSON.stringify(defaultOrder) === JSON.stringify(currentOrder)) {
         delete nextColumnOrders[this.tableKey];
       } else {
         nextColumnOrders[this.tableKey] = currentOrder;
       }
+      if (hiddenColumns.length === 0) {
+        delete nextColumnVisibility[this.tableKey];
+      } else {
+        nextColumnVisibility[this.tableKey] = hiddenColumns;
+      }
 
       await this.settingsStore.update({
         columnOrdersData: nextColumnOrders,
+        columnVisibilityData: nextColumnVisibility,
       });
       this.show = false;
     },
