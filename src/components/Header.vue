@@ -11,29 +11,6 @@ div(:class="{'fixed-top-padding': fixedTopMenu}")
 
     b-collapse#nav-collapse(is-nav)
       b-navbar-nav
-        // If only a single view (the default) is available
-        b-nav-item(v-if="activityViews && activityViews.length === 1", v-for="view in activityViews", :key="view.name", :to="view.pathUrl")
-          div.px-2.px-lg-1
-            icon(name="calendar-day")
-            | {{ $tr('Activity') }}
-
-        // If multiple (or no) activity views are available
-        b-nav-item-dropdown(v-if="!activityViews || activityViews.length !== 1")
-          template(slot="button-content")
-            div.d-inline.px-2.px-lg-1
-              icon(name="calendar-day")
-              | {{ $tr('Activity') }}
-          b-dropdown-item(v-if="activityViews === null", disabled)
-            span.text-muted {{ $tr('Loading...') }}
-            br
-          b-dropdown-item(v-else-if="activityViews && activityViews.length <= 0", disabled)
-            | {{ $tr('No activity reports available') }}
-            br
-            small {{ $tr('Make sure you have both an AFK and window watcher running') }}
-          b-dropdown-item(v-for="view in activityViews", :key="view.name", :to="view.pathUrl")
-            icon(:name="view.icon")
-            | {{ view.name }}
-
         b-nav-item(to="/timeline" style="font-color: #000;")
           div.px-2.px-lg-1
             icon(name="stream")
@@ -82,34 +59,6 @@ div(:class="{'fixed-top-padding': fixedTopMenu}")
           b-dropdown-item-button(@click="logout")
             | {{ $tr('Log out') }}
 
-        b-nav-item-dropdown(v-if="showToolsMenu")
-          template(slot="button-content")
-            div.d-inline.px-2.px-lg-1
-              icon(name="tools")
-              | {{ $tr('Tools') }}
-          b-dropdown-item(to="/search")
-            icon(name="search")
-            | {{ $tr('Search') }}
-          b-dropdown-item(to="/trends" v-if="devmode")
-            icon(name="chart-line")
-            | {{ $tr('Trends') }}
-          b-dropdown-item(to="/report" v-if="devmode")
-            icon(name="chart-pie")
-            | {{ $tr('Report') }}
-          b-dropdown-item(to="/alerts" v-if="devmode")
-            icon(name="flag-checkered")
-            | {{ $tr('Alerts') }}
-          b-dropdown-item(to="/timespiral" v-if="devmode")
-            icon(name="history")
-            | {{ $tr('Timespiral') }}
-          b-dropdown-item(to="/query")
-            icon(name="code")
-            | {{ $tr('Query') }}
-          b-dropdown-item(to="/graph" v-if="devmode")
-            // TODO: use circle-nodes instead in the future
-            icon(name="project-diagram")
-            | {{ $tr('Graph') }}
-
         b-nav-item(to="/buckets")
           div.px-2.px-lg-1
             icon(name="database")
@@ -133,10 +82,8 @@ div(:class="{'fixed-top-padding': fixedTopMenu}")
     p.text-muted.mb-3 {{ $tr('Change which top navigation menus are visible for all users.') }}
     b-alert.mb-3(v-if="adminSettingsError" show variant="danger")
       | {{ adminSettingsError }}
-    b-form-checkbox.mb-3(v-model="adminSettingsDraft.showStopwatchMenu" switch :disabled="adminSettingsSaving")
+    b-form-checkbox(v-model="adminSettingsDraft.showStopwatchMenu" switch :disabled="adminSettingsSaving")
       | {{ $tr('Show stopwatch menu') }}
-    b-form-checkbox(v-model="adminSettingsDraft.showToolsMenu" switch :disabled="adminSettingsSaving")
-      | {{ $tr('Show tools menu') }}
 </template>
 
 <style lang="scss" scoped>
@@ -147,25 +94,13 @@ div(:class="{'fixed-top-padding': fixedTopMenu}")
 
 <script lang="ts">
 // only import the icons you use to reduce bundle size
-import 'vue-awesome/icons/calendar-day';
 import 'vue-awesome/icons/calendar-week';
 import 'vue-awesome/icons/stream';
 import 'vue-awesome/icons/database';
-import 'vue-awesome/icons/search';
-import 'vue-awesome/icons/code';
-import 'vue-awesome/icons/chart-line'; // TODO: switch to chart-column, when vue-awesome supports FA v6
-import 'vue-awesome/icons/chart-pie';
-import 'vue-awesome/icons/flag-checkered';
 import 'vue-awesome/icons/stopwatch';
 import 'vue-awesome/icons/cog';
-import 'vue-awesome/icons/tools';
-import 'vue-awesome/icons/history';
 import 'vue-awesome/icons/globe';
 import 'vue-awesome/icons/user';
-
-// TODO: use circle-nodes instead in the future
-import 'vue-awesome/icons/project-diagram';
-//import 'vue-awesome/icons/cicle-nodes';
 
 import 'vue-awesome/icons/ellipsis-h';
 
