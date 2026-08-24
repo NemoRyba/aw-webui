@@ -27,13 +27,18 @@ b-modal(v-if="event && event.id", :id="'edit-modal-' + event.id", ref="eventEdit
       tr
         th Key
         th Value
-      tr(v-for="(v, k) in editedEvent.data" :key="k")
+      tr(v-for="k in editableDataKeys" :key="k")
         td
           b-input(disabled, :value="k", size="sm")
         td
-          b-checkbox(v-if="typeof event.data[k] === typeof true", v-model="editedEvent.data[k]", style="margin: 0.25em")
-          b-input(v-if="typeof event.data[k] === typeof 'string'", v-model="editedEvent.data[k]", size="sm")
-          b-input(v-if="typeof event.data[k] === 'number'", v-model.number="editedEvent.data[k]", size="sm", type="number")
+          b-checkbox(v-if="typeof editedEvent.data[k] === typeof true", v-model="editedEvent.data[k]", style="margin: 0.25em")
+          b-input(v-if="typeof editedEvent.data[k] === typeof 'string'", v-model="editedEvent.data[k]", size="sm")
+          b-input(v-if="typeof editedEvent.data[k] === 'number'", v-model.number="editedEvent.data[k]", size="sm", type="number")
+
+    div.event-provenance.mt-3(v-if="provenanceLines.length > 0")
+      h6.mb-1 {{ $tr('History') }}
+      div.small.text-muted(v-for="(line, index) in provenanceLines" :key="index")
+        | {{ line }}
 
     div.category-rule-panel.mt-3(v-if="categorizationAvailable")
       div.d-flex.align-items-center.mb-2
@@ -203,6 +208,26 @@ export default {
     };
   },
   computed: {
+    editableDataKeys() {
+      // Keys starting with $ are internal/audit metadata ($manual, $edits,
+      // $category, ...) and are not edited by hand.
+      return Object.keys(this.editedEvent?.data || {}).filter(key => !key.startsWith('$'));
+    },
+    provenanceLines() {
+      const data = this.editedEvent?.data || {};
+      const lines = [];
+      if (data.$manual) {
+        lines.push(this.$tr('Manually created event'));
+      }
+      const edits = Array.isArray(data.$edits) ? data.$edits : [];
+      for (const entry of edits) {
+        const action =
+          entry?.action === 'created' ? this.$tr('Created') : this.$tr('Edited');
+        const at = entry?.at ? new Date(entry.at).toLocaleString() : '';
+        lines.push(`${action}: ${entry?.by || '?'} — ${at}`);
+      }
+      return lines;
+    },
     start: {
       get: function () {
         return moment(this.editedEvent.timestamp).format();

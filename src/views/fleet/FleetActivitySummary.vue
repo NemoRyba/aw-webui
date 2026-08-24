@@ -1675,7 +1675,21 @@ export default {
       if (this.timelineBins.length === 0) {
         return undefined;
       }
-      return Math.ceil(Math.max(...this.timelineBins.map(bin => this.binCapacityHours(bin))));
+      // Upper bound: the bin's time capacity (e.g. 24h for daily bins).
+      const capacityMax = Math.ceil(
+        Math.max(...this.timelineBins.map(bin => this.binCapacityHours(bin)))
+      );
+      // Scale to the data instead of the capacity: the axis ends ~1h above the
+      // tallest stacked bar, so a 5h day is not drawn inside an empty 24h frame.
+      const dataMax = Math.max(0, ...this.timelineBinTotals);
+      if (dataMax <= 0) {
+        return Math.min(1, capacityMax) || 1;
+      }
+      const padded =
+        dataMax < 1
+          ? Math.ceil((dataMax + 0.25) * 4) / 4 // sub-hour days: quarter-hour steps
+          : Math.ceil(dataMax + 1);
+      return Math.max(0.25, Math.min(capacityMax, padded));
     },
     timelineYTickStep() {
       const max = Number(this.timelineYAxisMax || 0);
@@ -2622,7 +2636,7 @@ export default {
 
       const response = await getClient().req.get(
         `/0/fleet/users/${encodeURIComponent(this.user.username)}/activity-summary`,
-        { params }
+        { params, timeout: 600000 }
       );
       if (
         options.requestId !== undefined &&

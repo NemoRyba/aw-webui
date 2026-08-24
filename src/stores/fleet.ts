@@ -177,6 +177,13 @@ export const useFleetStore = defineStore('fleet', {
       return comparison;
     },
 
+    async loadRedmineDailyComparison(payload = {}): Promise<any> {
+      const response = await getClient().req.post('/0/fleet/redmine-daily-comparison', payload, {
+        timeout: 600000,
+      });
+      return response.data;
+    },
+
     async loadRedmineMappings(): Promise<IRedmineUserMappingResponse> {
       const response = await getClient().req.get('/0/admin/redmine/mappings');
       const mappings = response.data;
@@ -200,6 +207,9 @@ export const useFleetStore = defineStore('fleet', {
     async loadUser(username: string, params = {}): Promise<IFleetUserDetail> {
       const response = await getClient().req.get(`/0/fleet/users/${encodeURIComponent(username)}`, {
         params,
+        // First-time computation of a long range can exceed the global request
+        // timeout; cached ranges return instantly. Allow up to 10 minutes here.
+        timeout: 600000,
       });
       this.userDetails = {
         ...this.userDetails,
@@ -211,7 +221,8 @@ export const useFleetStore = defineStore('fleet', {
     async recalculateUserSummary(username: string, payload = {}): Promise<IFleetUserDetail> {
       const response = await getClient().req.post(
         `/0/fleet/users/${encodeURIComponent(username)}/summary/recalculate`,
-        payload
+        payload,
+        { timeout: 600000 }
       );
       const cachedSummary = response.data;
       const existing = this.userDetails[username];

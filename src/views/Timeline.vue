@@ -33,6 +33,9 @@ div
       div.col-md-4
         b-form-group(:label="$tr('Duration:')")
           b-form-select(v-model="filter_duration", :options="durationOptions")
+      div.col-md-4
+        b-form-group(:label="$tr('Edited / manual events')")
+          b-form-select(v-model="filter_edited", :options="editedFilterOptions")
 
     div
       div.d-flex.flex-wrap.align-items-center.justify-content-between.mb-2
@@ -92,6 +95,7 @@ export default {
       filter_username: null,
       filter_device_id: null,
       filter_duration: null,
+      filter_edited: null,
       swimlane: null,
       selectedWatcherKeys: [],
       updateTimelineWindow: true,
@@ -160,6 +164,13 @@ export default {
         { value: 30 * 60, text: '30+ min' },
         { value: 1 * 60 * 60, text: '1+ h' },
         { value: 2 * 60 * 60, text: '2+ h' },
+      ];
+    },
+    editedFilterOptions() {
+      return [
+        { value: null, text: this.$tr('All') },
+        { value: 'hide', text: this.$tr('Hide edited and manual events') },
+        { value: 'only', text: this.$tr('Only edited and manual events') },
       ];
     },
     watcherOptions() {
@@ -235,6 +246,16 @@ export default {
         let events = bucket.events || [];
         if (this.filter_duration > 0) {
           events = _.filter(events, event => event.duration >= this.filter_duration);
+        }
+        if (this.filter_edited) {
+          const isFlagged = event => {
+            const data = event?.data || {};
+            return Boolean(data.$manual) || (Array.isArray(data.$edits) && data.$edits.length > 0);
+          };
+          events =
+            this.filter_edited === 'hide'
+              ? _.filter(events, event => !isFlagged(event))
+              : _.filter(events, isFlagged);
         }
         if (events.length === 0) {
           continue;
@@ -350,6 +371,9 @@ export default {
       this.syncSelectedWatchers();
     },
     filter_duration() {
+      this.updateTimelineWindow = false;
+    },
+    filter_edited() {
       this.updateTimelineWindow = false;
     },
     swimlane() {

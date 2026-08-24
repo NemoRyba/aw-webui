@@ -134,6 +134,7 @@ import { getCategoryColorFromEvent, getTitleAttr } from '../util/color';
 import { getSwimlane } from '../util/swimlane.js';
 import { IEvent } from '../util/interfaces';
 import { translateCurrent } from '~/i18n';
+import { useAuthStore } from '~/stores/auth';
 import { useSettingsStore } from '~/stores/settings';
 
 import { Timeline } from 'vis-timeline/esnext';
@@ -185,6 +186,7 @@ export default {
   data() {
     return {
       timeline: null,
+      authStore: useAuthStore(),
       settingsStore: useSettingsStore(),
       filterShortEvents: true,
       items: [],
@@ -210,6 +212,11 @@ export default {
     };
   },
   computed: {
+    canEditEvents() {
+      // Currently admins only; the server additionally allows users to edit
+      // events of their own buckets, so this can be relaxed later.
+      return this.authStore.isAdmin;
+    },
     bucketsFromEither() {
       if (this.buckets) {
         return this.buckets;
@@ -303,6 +310,9 @@ export default {
       this.timeline = new Timeline(el, [], [], this.options);
       this.timeline.on('itemover', properties => {
         this.setDetailFromItemId(properties.item);
+      });
+      this.timeline.on('doubleClick', properties => {
+        this.onDoubleClick(properties);
       });
       this.timeline.on('select', properties => {
         if (properties.items.length === 1) {
@@ -436,6 +446,72 @@ export default {
         return Color('#cccccc').darken(0.3);
       }
     },
+    manualEventTemplate(bucket) {
+      const bucketType = String(bucket?.type || '');
+      if (bucketType === 'currentwindow') {
+        return { app: '', title: '' };
+      }
+      if (bucketType === 'afkstatus') {
+        return { status: 'not-afk' };
+      }
+      if (bucketType === 'sessionstate') {
+        return { state: 'active' };
+      }
+      if (bucketType.startsWith('audio')) {
+        return { audible: true };
+      }
+      return { note: '' };
+    },
+    onDoubleClick: async function (properties) {
+      if (!this.canEditEvents) {
+        return;
+      }
+      // Only empty timeline space creates events; double-clicking an item
+      // keeps the default zoom/select behavior.
+      if (properties?.what !== 'background' && properties?.what !== 'axis') {
+        return;
+      }
+      const bucketId = properties?.group;
+      if (!bucketId || bucketId === '__queried_interval__') {
+        return;
+      }
+      const bucket = _.find(this.bucketsFromEither, b => String(b.id) === String(bucketId));
+      if (!bucket || !properties?.time) {
+        return;
+      }
+
+      const start = moment(properties.time);
+      const newEvent = {
+        timestamp: start.toISOString(),
+        duration: 30 * 60,
+        data: {
+          ...this.manualEventTemplate(bucket),
+          $manual: true,
+        },
+      };
+
+      try {
+        const response = await this.$aw.req.post(
+          '/0/buckets/' + encodeURIComponent(bucketId) + '/events',
+          newEvent
+        );
+        const created = response?.data;
+        if (!created || created.id === undefined || created.id === null) {
+          console.error('Manual event creation returned no event:', response);
+          return;
+        }
+
+        this.editorScrollPosition = this.capturePageScrollPosition();
+        this.editingEvent = created;
+        this.editingEventBucket = bucketId;
+        this.$nextTick(() => {
+          this.openEditor();
+        });
+      } catch (error) {
+        console.error('Unable to create manual event:', error);
+        alert(translateCurrent('Unable to create manual event'));
+      }
+    },
     onSelect: async function (properties) {
       if (properties.items.length == 0) {
         return;
@@ -519,7 +595,7 @@ export default {
           detailHtml: item.tooltip,
           bucketId: item.bucketId,
           event: item.event,
-          editable: !item.colorTarget && !item.event?.data?.$synthetic,
+          editable: this.canEditEvents && !item.event?.data?.$synthetic,
           colorTarget: item.colorTarget,
         };
       });

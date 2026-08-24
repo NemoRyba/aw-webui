@@ -126,15 +126,13 @@ div
       template(v-slot:cell(redmine_projects)="data")
         div.redmine-project-list(v-if="data.item.redmine_projects.length")
           div.redmine-project-row(
-            v-for="project in visibleRedmineProjects(data.item.redmine_projects)"
+            v-for="project in sortedRedmineProjects(data.item.redmine_projects)"
             :key="`${project.project_id}-${project.project_name}`"
           )
             span.redmine-project-name(:title="project.project_name || `#${project.project_id}`")
               | {{ project.project_name || `#${project.project_id}` }}
             span.redmine-project-time
               | {{ project.seconds | friendlyduration }}
-          div.small.text-muted(v-if="remainingRedmineProjectCount(data.item.redmine_projects)")
-            | {{ $tr('+ {count} more', { count: remainingRedmineProjectCount(data.item.redmine_projects) }) }}
         span(v-else) -
       template(v-slot:cell(delta_seconds)="data")
         span(v-if="data.item.delta_seconds !== null")
@@ -157,6 +155,72 @@ div
       template(v-slot:cell(last_seen)="data")
         span(v-if="data.item.last_seen") {{ data.item.last_seen | friendlytime }}
         span(v-else) -
+
+  b-card.mt-3(v-if="summary")
+    div.fleet-summary-table-tools.mb-3
+      div
+        h5.mb-0 {{ $tr('Daily comparison') }}
+        div.text-muted.small(v-if="dailyComparison && dailyComparison.generated_at")
+          | {{ $tr('Redmine loaded') }} {{ dailyComparison.generated_at | friendlytime }}
+      div.fleet-summary-table-actions
+        b-button(
+          size="sm"
+          variant="outline-dark"
+          @click="loadDailyComparison"
+          :disabled="dailyLoading || summaryRows.length === 0"
+        )
+          b-spinner.mr-1(v-if="dailyLoading" small)
+          | {{ dailyLoading ? $tr('Loading...') : $tr('Load daily comparison') }}
+    b-alert(v-if="dailyError" show variant="warning")
+      | {{ dailyError }}
+    div.aw-loading(v-if="dailyLoading")
+      | {{ $tr('Loading...') }}
+    div(v-else-if="dailyComparison")
+      b-alert(v-if="dailyDays.length === 0" show variant="info")
+        | {{ $tr('No daily data found in the selected range.') }}
+      div.fleet-daily-day(v-for="day in dailyDays" :key="day.date")
+        div.fleet-daily-day-header
+          span.fleet-daily-day-date {{ formatDailyDate(day.date) }}
+          span.fleet-daily-day-totals
+            | {{ $tr('Active session time') }}: {{ day.totals.active_seconds | friendlyduration }}
+            |  ·
+            | {{ $tr('Redmine booked time') }}: {{ day.totals.redmine_seconds | friendlyduration }}
+        b-table(
+          small
+          hover
+          responsive="lg"
+          :items="day.users"
+          :fields="dailyFields"
+          :empty-text="$tr('No users found')"
+        )
+          template(v-slot:cell(username)="data")
+            router-link(:to="'/fleet/users/' + encodeURIComponent(data.item.username)")
+              | {{ data.item.username }}
+          template(v-slot:cell(active_seconds)="data")
+            | {{ data.item.active_seconds | friendlyduration }}
+          template(v-slot:cell(redmine_seconds)="data")
+            span(v-if="data.item.redmine_seconds !== null")
+              | {{ data.item.redmine_seconds | friendlyduration }}
+            span.text-muted(v-else :title="$tr('No Redmine user mapped')") -
+          template(v-slot:cell(delta_seconds)="data")
+            span(v-if="data.item.delta_seconds !== null")
+              | {{ formatSignedDuration(data.item.delta_seconds) }}
+            span(v-else) -
+          template(v-slot:cell(entries)="data")
+            div.redmine-project-list(v-if="data.item.entries.length")
+              div.fleet-daily-entry(
+                v-for="(entry, index) in data.item.entries"
+                :key="index"
+              )
+                div.redmine-project-row
+                  span.redmine-project-name(:title="entry.project_name || `#${entry.project_id}`")
+                    | {{ entry.project_name || `#${entry.project_id}` }}
+                  span.redmine-project-time
+                    | {{ entry.seconds | friendlyduration }}
+                div.fleet-daily-entry-comment(v-if="entry.comments")
+                  | {{ entry.comments }}
+            span.text-muted(v-else-if="data.item.matched") {{ $tr('No bookings') }}
+            span.text-muted(v-else) {{ $tr('No Redmine user mapped') }}
 </template>
 
 <script lang="ts">
@@ -199,6 +263,10 @@ export default {
       redmineRequestId: 0,
       hasLoadedSummary: false,
       summaryRequestId: 0,
+      dailyComparison: null,
+      dailyLoading: false,
+      dailyError: '',
+      dailyRequestId: 0,
       tableKey: 'fleet-summary-users',
     };
   },
@@ -282,6 +350,22 @@ export default {
         ...user,
         ...this.summaryRowMetrics(user),
       }));
+    },
+    dailyDays() {
+      return this.dailyComparison?.days || [];
+    },
+    dailyFields() {
+      return [
+        { key: 'username', label: this.$tr('Username'), sortable: true },
+        { key: 'active_seconds', label: this.$tr('Active session time'), sortable: true },
+        { key: 'redmine_seconds', label: this.$tr('Redmine booked time'), sortable: true },
+        { key: 'delta_seconds', label: this.$tr('Difference'), sortable: true },
+        {
+          key: 'entries',
+          label: this.$tr('Bookings'),
+          tdClass: 'fleet-summary-projects-cell',
+        },
+      ];
     },
     canLoadSummary() {
       return (
@@ -448,6 +532,10 @@ export default {
       this.redmineLoadError = '';
       this.redmineLoadedAt = '';
       this.redmineComparisonResult = null;
+      this.dailyRequestId += 1;
+      this.dailyComparison = null;
+      this.dailyLoading = false;
+      this.dailyError = '';
       this.fleetStore.$patch({
         summary: null,
         redmineComparison: null,
@@ -568,6 +656,51 @@ export default {
         }
       }
     },
+    async loadDailyComparison() {
+      if (this.summaryRows.length === 0) {
+        return;
+      }
+      const requestId = this.dailyRequestId + 1;
+      this.dailyRequestId = requestId;
+      const params = {
+        ...this.buildParams(),
+        usernames: this.summaryRows.map(row => row.username),
+      };
+      this.dailyLoading = true;
+      this.dailyError = '';
+      try {
+        const comparison = await this.fleetStore.loadRedmineDailyComparison(params);
+        if (requestId !== this.dailyRequestId) {
+          return;
+        }
+        this.dailyComparison = comparison;
+        if (comparison.error) {
+          this.dailyError = comparison.error;
+        } else if (!comparison.enabled) {
+          this.dailyError = comparison.message || this.$tr('Redmine integration is disabled');
+        }
+      } catch (error) {
+        if (requestId === this.dailyRequestId) {
+          const errorData = error?.response?.data || {};
+          this.dailyError =
+            errorData.error ||
+            errorData.message ||
+            errorData.detail ||
+            this.$tr('Unable to load Redmine comparison');
+        }
+      } finally {
+        if (requestId === this.dailyRequestId) {
+          this.dailyLoading = false;
+        }
+      }
+    },
+    formatDailyDate(date) {
+      const parsed = moment(date, 'YYYY-MM-DD', true);
+      if (!parsed.isValid()) {
+        return date;
+      }
+      return parsed.format('dddd, ll');
+    },
     formatSignedDuration(seconds) {
       const value = Number(seconds || 0);
       if (value === 0) {
@@ -579,12 +712,6 @@ export default {
       return [...(projects || [])].sort(
         (left, right) => Number(right.seconds || 0) - Number(left.seconds || 0)
       );
-    },
-    visibleRedmineProjects(projects) {
-      return this.sortedRedmineProjects(projects).slice(0, 3);
-    },
-    remainingRedmineProjectCount(projects) {
-      return Math.max(0, this.sortedRedmineProjects(projects).length - 3);
     },
     redmineStatusVariant(redmineStatus) {
       const variants = {
@@ -674,6 +801,40 @@ export default {
 .redmine-project-time {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+.fleet-daily-day {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.fleet-daily-day-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.fleet-daily-day-date {
+  font-weight: 600;
+}
+
+.fleet-daily-day-totals {
+  color: var(--gray);
+  font-size: 0.85rem;
+}
+
+.fleet-daily-entry {
+  margin-bottom: 0.35rem;
+  min-width: 0;
+}
+
+.fleet-daily-entry-comment {
+  color: var(--gray);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
 }
 
 .redmine-match-reason {
