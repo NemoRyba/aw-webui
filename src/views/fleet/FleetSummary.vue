@@ -191,6 +191,7 @@ export default {
       redmineLoadError: '',
       userSearch: '',
       selectedUsernames: [],
+      allUserOptions: [],
       selectionInitialized: false,
       selectionDebounceTimer: null,
       redmineLoadedAt: '',
@@ -250,7 +251,7 @@ export default {
       return visibleFields(orderedFields, hiddenColumns);
     },
     userOptions() {
-      return this.fleetStore.users || [];
+      return this.allUserOptions;
     },
     filteredUserOptions() {
       const query = this.userSearch.toLowerCase();
@@ -381,6 +382,25 @@ export default {
       const available = new Set(usernames);
       this.selectedUsernames = this.selectedUsernames.filter(username => available.has(username));
     },
+    mergeUserOptions(users) {
+      const byUsername = new Map();
+      for (const user of this.allUserOptions || []) {
+        if (user?.username) {
+          byUsername.set(user.username, user);
+        }
+      }
+      for (const user of users || []) {
+        if (user?.username) {
+          byUsername.set(user.username, {
+            ...(byUsername.get(user.username) || {}),
+            ...user,
+          });
+        }
+      }
+      this.allUserOptions = Array.from(byUsername.values()).sort((left, right) =>
+        String(left.username || '').localeCompare(String(right.username || ''))
+      );
+    },
     isUserSelected(username) {
       return this.selectedUsernameSet.has(username);
     },
@@ -437,7 +457,8 @@ export default {
       this.usersLoading = true;
       this.usersLoadError = '';
       try {
-        await this.fleetStore.loadUsers();
+        const users = await this.fleetStore.loadUsers();
+        this.mergeUserOptions(users);
         this.defaultSelectUsers();
       } catch (error) {
         this.usersLoadError = this.$tr('Unable to load fleet users');
@@ -464,10 +485,11 @@ export default {
         redmineComparison: null,
       });
       try {
-        await this.fleetStore.loadSummary(params);
+        const summary = await this.fleetStore.loadSummary(params);
         if (requestId !== this.summaryRequestId) {
           return;
         }
+        this.mergeUserOptions(summary?.users || []);
         this.hasLoadedSummary = true;
       } catch (error) {
         if (requestId === this.summaryRequestId) {
