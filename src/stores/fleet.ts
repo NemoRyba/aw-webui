@@ -116,7 +116,7 @@ export const useFleetStore = defineStore('fleet', {
         params,
       });
       const summary = response.data;
-      this.$patch({ summary, users: summary.users || this.users });
+      this.$patch({ summary });
       return summary;
     },
 

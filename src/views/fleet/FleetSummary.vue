@@ -77,10 +77,10 @@ div
 
   b-alert(v-if="loadError" show variant="danger")
     | {{ loadError }}
-  b-alert(v-if="redmineLoadError" show variant="warning")
+  b-alert(v-if="summary || loading" v-show="redmineLoadError" show variant="warning")
     | {{ redmineLoadError }}
 
-  b-card(v-if="summary")
+  b-card(v-if="summary || loading")
     div.fleet-summary-table-tools.mb-3
       div
         h5.mb-0 {{ $tr('Evaluation') }}
@@ -194,12 +194,16 @@ export default {
       selectionInitialized: false,
       selectionDebounceTimer: null,
       redmineLoadedAt: '',
+      redmineComparisonResult: null,
+      redmineRequestId: 0,
+      hasLoadedSummary: false,
+      summaryRequestId: 0,
       tableKey: 'fleet-summary-users',
     };
   },
   computed: {
     summary() {
-      return this.fleetStore.summary;
+      return this.hasLoadedSummary ? this.fleetStore.summary : null;
     },
     rangeLabel() {
       if (!this.summary?.range?.start || !this.summary?.range?.end) {
@@ -260,7 +264,7 @@ export default {
       );
     },
     redmineComparison() {
-      return this.fleetStore.redmineComparison;
+      return this.redmineComparisonResult;
     },
     redmineRowsByUsername() {
       const rows = {};
@@ -303,6 +307,7 @@ export default {
     },
   },
   async mounted() {
+    this.clearLoadedResults();
     await this.loadUsers();
   },
   beforeDestroy() {
@@ -414,9 +419,15 @@ export default {
       }, 500);
     },
     clearLoadedResults() {
+      this.summaryRequestId += 1;
+      this.redmineRequestId += 1;
+      this.hasLoadedSummary = false;
+      this.loading = false;
+      this.redmineLoading = false;
       this.loadError = '';
       this.redmineLoadError = '';
       this.redmineLoadedAt = '';
+      this.redmineComparisonResult = null;
       this.fleetStore.$patch({
         summary: null,
         redmineComparison: null,
@@ -438,21 +449,34 @@ export default {
       if (!this.canLoadSummary) {
         return;
       }
+      const requestId = this.summaryRequestId + 1;
+      this.summaryRequestId = requestId;
+      const params = this.buildParams();
       this.loading = true;
+      this.hasLoadedSummary = false;
+      this.redmineRequestId += 1;
+      this.redmineComparisonResult = null;
       this.loadError = '';
-      let loadedSummary = false;
+      this.redmineLoadError = '';
+      this.redmineLoadedAt = '';
+      this.fleetStore.$patch({
+        summary: null,
+        redmineComparison: null,
+      });
       try {
-        await this.fleetStore.loadSummary(this.buildParams());
-        this.fleetStore.$patch({ redmineComparison: null });
-        this.redmineLoadedAt = '';
-        loadedSummary = true;
+        await this.fleetStore.loadSummary(params);
+        if (requestId !== this.summaryRequestId) {
+          return;
+        }
+        this.hasLoadedSummary = true;
       } catch (error) {
-        this.loadError = this.$tr('Unable to load fleet summary');
+        if (requestId === this.summaryRequestId) {
+          this.loadError = this.$tr('Unable to load fleet summary');
+        }
       } finally {
-        this.loading = false;
-      }
-      if (loadedSummary) {
-        this.loadRedmineComparison();
+        if (requestId === this.summaryRequestId) {
+          this.loading = false;
+        }
       }
     },
     async recalculate() {
@@ -478,19 +502,29 @@ export default {
     async loadRedmineComparison() {
       this.clearSelectionDebounce();
       if (this.summaryRows.length === 0) {
+        this.redmineRequestId += 1;
+        this.redmineLoading = false;
+        this.redmineComparisonResult = null;
         this.fleetStore.$patch({ redmineComparison: null });
         this.redmineLoadedAt = '';
         this.redmineLoadError = '';
         return;
       }
 
+      const requestId = this.redmineRequestId + 1;
+      this.redmineRequestId = requestId;
+      const params = {
+        ...this.buildParams(),
+        usernames: this.summaryRows.map(row => row.username),
+      };
       this.redmineLoading = true;
       this.redmineLoadError = '';
       try {
-        const comparison = await this.fleetStore.loadRedmineComparison({
-          ...this.buildParams(),
-          usernames: this.summaryRows.map(row => row.username),
-        });
+        const comparison = await this.fleetStore.loadRedmineComparison(params);
+        if (requestId !== this.redmineRequestId) {
+          return;
+        }
+        this.redmineComparisonResult = comparison;
         this.redmineLoadedAt = comparison.generated_at;
         if (comparison.error) {
           this.redmineLoadError = comparison.error;
@@ -498,14 +532,18 @@ export default {
           this.redmineLoadError = comparison.message || this.$tr('Redmine integration is disabled');
         }
       } catch (error) {
-        const errorData = error?.response?.data || {};
-        this.redmineLoadError =
-          errorData.error ||
-          errorData.message ||
-          errorData.detail ||
-          this.$tr('Unable to load Redmine comparison');
+        if (requestId === this.redmineRequestId) {
+          const errorData = error?.response?.data || {};
+          this.redmineLoadError =
+            errorData.error ||
+            errorData.message ||
+            errorData.detail ||
+            this.$tr('Unable to load Redmine comparison');
+        }
       } finally {
-        this.redmineLoading = false;
+        if (requestId === this.redmineRequestId) {
+          this.redmineLoading = false;
+        }
       }
     },
     formatSignedDuration(seconds) {
