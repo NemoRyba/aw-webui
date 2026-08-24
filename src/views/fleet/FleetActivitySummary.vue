@@ -110,8 +110,26 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
   b-alert(v-if="loadError" show variant="danger")
     | {{ loadError }}
 
-  div.aw-loading(v-if="loading")
-    | {{ $tr('Loading...') }}
+  div.fleet-summary-loading(v-if="loading")
+    div.d-flex.flex-wrap.align-items-start
+      b-spinner.mt-1.mr-2(small)
+      div.flex-fill
+        div.font-weight-bold {{ $tr('Loading activity data') }}
+        div.small.text-muted {{ loadProgressText }}
+        div.small.text-muted(v-if="loadProgressLabel")
+          | {{ $tr('Current bucket') }}: {{ loadProgressLabel }}
+        b-progress.mt-2(
+          v-if="loadProgressTotal > 0"
+          :max="loadProgressTotal"
+          :value="loadProgressDone"
+          height="0.45rem"
+        )
+      div.fleet-summary-loading-actions.ml-sm-3.mt-2.mt-sm-0
+        b-button(size="sm" variant="outline-secondary" @click="cancelRawEventLoad")
+          | {{ $tr('Cancel') }}
+        b-button(size="sm" variant="outline-primary" @click="restartRawEventLoad")
+          icon(name="sync")
+          span.ml-1 {{ $tr('Refresh') }}
 
   b-alert(v-else-if="activeWindowEvents.length === 0" show variant="info")
     | {{ $tr('No activity summary data found for the selected range.') }}
@@ -479,6 +497,7 @@ import { useSettingsStore } from '~/stores/settings';
 import { build_category_hierarchy, classifyEvents } from '~/util/classes';
 import { getColorFromString } from '~/util/color';
 import { getBucketIdentity } from '~/util/bucketIdentity';
+import { getClient } from '~/util/awclient';
 import { seconds_to_duration } from '~/util/time';
 import { detectPreferredTheme } from '~/util/theme';
 import { isRegexBroad, validateRegex } from '~/util/validate';
@@ -654,6 +673,12 @@ export default {
       settingsStore,
       loading: false,
       loadError: '',
+      loadCancelled: false,
+      loadElapsedSeconds: 0,
+      loadElapsedTimer: null,
+      loadProgressDone: 0,
+      loadProgressTotal: 0,
+      loadProgressLabel: '',
       showFilters: false,
       showAfkTime: !filterState.subtractAfkTime,
       countAudibleBrowserTime: filterState.countAudibleBrowserTime,
@@ -759,6 +784,16 @@ export default {
 
       const end = this.rangeEnd.clone().subtract(1, 'millisecond');
       return `${this.rangeStart.format('MMM D, YYYY')} - ${end.format('MMM D, YYYY')}`;
+    },
+    loadProgressText() {
+      const elapsed = `${this.$tr('Elapsed')}: ${this.loadElapsedSeconds}s`;
+      if (this.loadProgressTotal > 0) {
+        return `${this.$tr('Loaded {done} of {total} bucket(s)', {
+          done: this.loadProgressDone,
+          total: this.loadProgressTotal,
+        })} - ${elapsed}`;
+      }
+      return `${this.$tr('Preparing data load')} - ${elapsed}`;
     },
     isSingleDayRange() {
       if (!this.rangeStart.isValid() || !this.rangeEnd.isValid()) {
@@ -1997,6 +2032,7 @@ export default {
     },
   },
   beforeDestroy() {
+    this.stopLoadTimer();
     this.clearTimelineTooltipHideTimer();
     this.clearTimelineTooltipShowTimer();
     this.flushFleetFilterStateSave();
@@ -2007,6 +2043,61 @@ export default {
   methods: {
     noop() {
       return undefined;
+    },
+    startLoadTimer() {
+      this.stopLoadTimer();
+      this.loadElapsedSeconds = 0;
+      this.loadElapsedTimer = window.setInterval(() => {
+        this.loadElapsedSeconds += 1;
+      }, 1000);
+    },
+    stopLoadTimer() {
+      if (this.loadElapsedTimer) {
+        window.clearInterval(this.loadElapsedTimer);
+        this.loadElapsedTimer = null;
+      }
+    },
+    resetLoadProgress() {
+      this.loadProgressDone = 0;
+      this.loadProgressTotal = 0;
+      this.loadProgressLabel = '';
+    },
+    isCancelledError(error) {
+      const message = String(error?.message || error || '').toLowerCase();
+      return (
+        error?.code === 'ERR_CANCELED' ||
+        error?.name === 'CanceledError' ||
+        message.includes('cancel') ||
+        message.includes('abort')
+      );
+    },
+    isCurrentLoadRequest(requestId, requestKey) {
+      return requestId === this.loadRequestId && requestKey === this.reloadKey;
+    },
+    async abortClientRequests(message) {
+      const client = getClient();
+      if (typeof client.abort === 'function') {
+        await client.abort(message);
+      } else if (client.controller) {
+        client.controller.abort();
+      }
+    },
+    cancelRawEventLoad(options: any = {}) {
+      this.loadRequestId += 1;
+      this.loading = false;
+      this.loadCancelled = true;
+      this.stopLoadTimer();
+      this.resetLoadProgress();
+      if (!options.silent) {
+        this.loadError = this.$tr('Loading cancelled');
+      }
+      this.abortClientRequests('Fleet activity summary load cancelled');
+    },
+    restartRawEventLoad() {
+      this.cancelRawEventLoad({ silent: true });
+      this.$nextTick(() => {
+        this.loadRawEvents();
+      });
     },
     syncShortAfkThresholdDefaultToMax() {
       const input = this.shortAfkThresholdInputForSeconds(this.maxActiveSessionAfkPeriodSeconds);
@@ -2332,17 +2423,20 @@ export default {
       this.loadRequestId = requestId;
       if (showGlobalLoading) {
         this.loading = true;
+        this.startLoadTimer();
       }
       this.loadError = '';
+      this.loadCancelled = false;
+      this.resetLoadProgress();
 
       try {
         if (!this.categoryStore.classes || this.categoryStore.classes.length === 0) {
           this.categoryStore.load();
         }
 
-        const buckets = await this.loadSummaryBuckets();
+        const buckets = await this.loadSummaryBuckets({ requestId, requestKey });
 
-        if (requestId !== this.loadRequestId || requestKey !== this.reloadKey) {
+        if (!this.isCurrentLoadRequest(requestId, requestKey)) {
           return false;
         }
 
@@ -2352,6 +2446,13 @@ export default {
         this.requestTimelineAutoScroll();
         return true;
       } catch (error) {
+        if (this.isCancelledError(error)) {
+          if (this.isCurrentLoadRequest(requestId, requestKey)) {
+            this.loadCancelled = true;
+            this.loadError = this.$tr('Loading cancelled');
+          }
+          return false;
+        }
         console.error('Unable to load fleet activity summary:', error);
         this.loadError = this.$tr('Unable to load activity summary');
         this.activeWindowEvents = [];
@@ -2361,6 +2462,8 @@ export default {
       } finally {
         if (showGlobalLoading && requestId === this.loadRequestId) {
           this.loading = false;
+          this.stopLoadTimer();
+          this.resetLoadProgress();
         }
       }
     },
@@ -2370,15 +2473,19 @@ export default {
       }
 
       const requestKey = this.reloadKey;
+      const requestId = this.loadRequestId;
       try {
-        const buckets = await this.loadSummaryBuckets();
-        if (requestKey !== this.reloadKey) {
+        const buckets = await this.loadSummaryBuckets({ requestId, requestKey });
+        if (!this.isCurrentLoadRequest(requestId, requestKey)) {
           return false;
         }
         this.rawTimelineBuckets = buckets;
         this.syncDailyTimelineWatchers();
         return true;
       } catch (error) {
+        if (this.isCancelledError(error)) {
+          return false;
+        }
         console.error('Unable to refresh daily watcher timeline:', error);
         this.loadError = this.$tr('Unable to load activity summary');
         return false;
@@ -2408,7 +2515,7 @@ export default {
     bumpPanelRefreshKey(panelKey) {
       this.$set(this.panelRefreshKeys, panelKey, Number(this.panelRefreshKeys[panelKey] || 0) + 1);
     },
-    async loadSummaryBuckets() {
+    async loadSummaryBuckets(options: any = {}) {
       await this.bucketsStore.ensureLoaded();
       const candidateBuckets = (this.bucketsStore.buckets || []).filter(bucket => {
         if (this.showDetailedWatcherTimeline) {
@@ -2417,15 +2524,32 @@ export default {
         return this.isSummaryBucketCandidate(bucket);
       });
 
-      return Promise.all(
-        candidateBuckets.map(bucket =>
-          this.bucketsStore.getBucketWithEvents({
+      this.loadProgressTotal = candidateBuckets.length;
+      this.loadProgressDone = 0;
+      this.loadProgressLabel = '';
+
+      const buckets = [];
+      for (const bucket of candidateBuckets) {
+        if (
+          options.requestId !== undefined &&
+          !this.isCurrentLoadRequest(options.requestId, options.requestKey)
+        ) {
+          return [];
+        }
+
+        this.loadProgressLabel = String(bucket.id || '');
+        buckets.push(
+          await this.bucketsStore.getBucketWithEvents({
             id: bucket.id,
             start: this.rangeStart.format(),
             end: this.rangeEnd.format(),
           })
-        )
-      );
+        );
+        this.loadProgressDone += 1;
+      }
+
+      this.loadProgressLabel = '';
+      return buckets;
     },
     isSummaryBucketCandidate(bucket) {
       if (
@@ -4499,6 +4623,24 @@ export default {
   background: #f5f7fb;
 }
 
+.fleet-summary-loading {
+  overflow: hidden;
+  padding: 0.9rem;
+  border: 1px solid rgba(127, 127, 127, 0.22);
+  border-radius: 0.45rem;
+  background: #fbfcfe;
+
+  .text-muted {
+    overflow-wrap: anywhere;
+  }
+}
+
+.fleet-summary-loading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .fleet-filter-meta {
   line-height: 1.4;
 }
@@ -4858,7 +5000,8 @@ export default {
 
 .fleet-activity-summary--dark .fleet-session-summary-strip,
 .fleet-activity-summary--dark .fleet-summary-panel,
-.fleet-activity-summary--dark .fleet-summary-filters {
+.fleet-activity-summary--dark .fleet-summary-filters,
+.fleet-activity-summary--dark .fleet-summary-loading {
   border-color: rgba(233, 235, 240, 0.16);
   background: rgba(255, 255, 255, 0.04);
 }

@@ -15,13 +15,14 @@ div
         :aria-label="$tr('Select user')"
         @change="selectUser"
       )
-      b-button(size="sm" variant="outline-dark" @click="refresh")
-        | {{ $tr('Refresh') }}
+      b-button(size="sm" variant="outline-dark" @click="refresh" :disabled="loading")
+        b-spinner.mr-1(v-if="loading" small)
+        | {{ loading ? loadingLabel : $tr('Refresh') }}
       b-button(
         size="sm"
         variant="outline-dark"
         @click="recalculateSummary"
-        :disabled="summaryRecalculating"
+        :disabled="summaryRecalculating || loading"
       )
         icon(name="sync")
         span.ml-1 {{ summaryRecalculating ? $tr('Calculating...') : $tr('Recalculate') }}
@@ -52,8 +53,16 @@ div
         label.small.text-muted(for="fleet-user-end") {{ $tr('End') }}
         input#fleet-user-end.form-control(type="date" v-model="endDate")
       div.col-md-4.mt-3.mt-md-4
-        b-button(variant="primary" @click="refresh")
-          | {{ $tr('Apply range') }}
+        div.fleet-user-range-actions
+          b-button(variant="primary" @click="refresh" :disabled="loading")
+            b-spinner.mr-1(v-if="loading" small)
+            | {{ loading ? loadingLabel : $tr('Apply range') }}
+          b-button(
+            v-if="loading"
+            variant="outline-secondary"
+            @click="cancelUserLoad"
+          )
+            | {{ $tr('Cancel') }}
     div.mt-3(v-if="user && user.available_devices.length")
       div.d-flex.align-items-center.mb-2
         div.small.text-muted
@@ -67,8 +76,12 @@ div
         :options="deviceOptions"
         stacked
       )
-  b-alert(show variant="info" v-if="!user")
+  b-alert(show variant="info" v-if="!user && !loading && !loadError && !loadCancelled")
     | {{ $tr('No data found for this user.') }}
+  b-alert(show variant="danger" v-if="loadError")
+    | {{ loadError }}
+  b-alert(show variant="warning" v-if="loadCancelled")
+    | {{ $tr('Loading cancelled') }}
 
   fleet-activity-summary(
     v-if="user"
@@ -134,6 +147,7 @@ import 'vue-awesome/icons/sync';
 
 import { useSettingsStore } from '~/stores/settings';
 import { useFleetStore } from '~/stores/fleet';
+import { getClient } from '~/util/awclient';
 import { orderFields } from '~/util/columnOrder';
 
 export default {
@@ -154,6 +168,11 @@ export default {
       endDate: moment().format('YYYY-MM-DD'),
       selectedDeviceIds: [],
       summaryRecalculating: false,
+      loading: false,
+      loadError: '',
+      loadCancelled: false,
+      loadElapsedSeconds: 0,
+      loadElapsedTimer: null,
       tableKeys: {
         apps: 'fleet-user-apps',
         sessions: 'fleet-user-sessions',
@@ -251,6 +270,12 @@ export default {
       }
       return end.isBefore(moment().startOf('day'), 'day');
     },
+    loadingLabel() {
+      if (this.loadElapsedSeconds > 0) {
+        return `${this.$tr('Loading...')} ${this.loadElapsedSeconds}s`;
+      }
+      return this.$tr('Loading...');
+    },
   },
   watch: {
     username: async function () {
@@ -260,6 +285,9 @@ export default {
   async mounted() {
     await this.loadUsers();
     await this.refresh();
+  },
+  beforeDestroy() {
+    this.stopLoadTimer();
   },
   methods: {
     async loadUsers() {
@@ -325,9 +353,62 @@ export default {
         .second(0)
         .millisecond(0);
     },
+    startLoadTimer() {
+      this.stopLoadTimer();
+      this.loadElapsedSeconds = 0;
+      this.loadElapsedTimer = window.setInterval(() => {
+        this.loadElapsedSeconds += 1;
+      }, 1000);
+    },
+    stopLoadTimer() {
+      if (this.loadElapsedTimer) {
+        window.clearInterval(this.loadElapsedTimer);
+        this.loadElapsedTimer = null;
+      }
+    },
+    isCancelledError(error) {
+      const message = String(error?.message || error || '').toLowerCase();
+      return (
+        error?.code === 'ERR_CANCELED' ||
+        error?.name === 'CanceledError' ||
+        message.includes('cancel') ||
+        message.includes('abort')
+      );
+    },
+    cancelUserLoad() {
+      this.loadCancelled = true;
+      this.loading = false;
+      this.stopLoadTimer();
+      const client = getClient();
+      if (typeof client.abort === 'function') {
+        client.abort('Fleet user load cancelled');
+      } else if (client.controller) {
+        client.controller.abort();
+      }
+    },
     async refresh() {
-      const user = await this.fleetStore.loadUser(this.username, this.buildParams());
-      this.selectedDeviceIds = user.selected_devices || [];
+      if (this.loading) {
+        return;
+      }
+
+      this.loading = true;
+      this.loadError = '';
+      this.loadCancelled = false;
+      this.startLoadTimer();
+      try {
+        const user = await this.fleetStore.loadUser(this.username, this.buildParams());
+        this.selectedDeviceIds = user.selected_devices || [];
+      } catch (error) {
+        if (this.isCancelledError(error)) {
+          this.loadCancelled = true;
+          return;
+        }
+        console.error('Unable to load fleet user:', error);
+        this.loadError = this.$tr('Unable to load user data');
+      } finally {
+        this.loading = false;
+        this.stopLoadTimer();
+      }
     },
     async recalculateSummary() {
       this.summaryRecalculating = true;
@@ -386,6 +467,12 @@ export default {
   justify-content: flex-start;
 }
 
+.fleet-user-range-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 @media (max-width: 575.98px) {
   .fleet-user-actions {
     margin-top: 0.75rem;
@@ -395,6 +482,11 @@ export default {
   .fleet-user-select {
     flex: 1 1 auto;
     width: auto;
+  }
+
+  .fleet-user-range-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 </style>

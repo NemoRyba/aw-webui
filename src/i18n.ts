@@ -163,6 +163,13 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'No activity summary data matches the current filters.':
       'Keine Aktivitätsübersichtsdaten entsprechen den aktuellen Filtern.',
     'Unable to load activity summary': 'Aktivitätsübersicht konnte nicht geladen werden',
+    'Unable to load user data': 'Benutzerdaten konnten nicht geladen werden',
+    'Loading activity data': 'Aktivitätsdaten werden geladen',
+    'Preparing data load': 'Ladevorgang wird vorbereitet',
+    'Loaded {done} of {total} bucket(s)': '{done} von {total} Bucket(s) geladen',
+    Elapsed: 'Vergangen',
+    'Current bucket': 'Aktueller Bucket',
+    'Loading cancelled': 'Ladevorgang abgebrochen',
     'Search activity': 'Aktivität suchen',
     'Filter app, title, URL, device...': 'App, Titel, URL, Gerät filtern...',
     'Show AFK time': 'AFK-Zeit anzeigen',
