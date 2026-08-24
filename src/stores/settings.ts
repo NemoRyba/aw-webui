@@ -162,7 +162,24 @@ export const useSettingsStore = defineStore('settings', {
       if (storage['landingpage'] !== undefined) {
         storage['landingpage'] = normalizeLandingPage(storage['landingpage']);
       }
-      this.$patch({ ...storage, _loaded: true });
+      // NOTE: $patch(object) MERGES nested objects, which can never remove keys
+      // (e.g. a column-visibility entry deleted on the server would resurrect
+      // from the old in-memory value). Assign per key instead so the loaded
+      // value REPLACES the previous state.
+      this.$patch(state => {
+        for (const [key, value] of Object.entries(storage)) {
+          state[key] = value;
+        }
+        // Object-map settings that exist neither on the server nor in
+        // localStorage were deleted remotely; reset them so a stale local
+        // copy cannot survive the reload.
+        for (const key of ['columnOrdersData', 'columnVisibilityData']) {
+          if (storage[key] === undefined) {
+            state[key] = {};
+          }
+        }
+        state._loaded = true;
+      });
 
       // Since `requestTimeout` is used to initialize the client, we need to set it again
       // https://github.com/ActivityWatch/activitywatch/issues/979
@@ -217,11 +234,17 @@ export const useSettingsStore = defineStore('settings', {
           console.log('Saving', { [key]: value });
           //console.log('Was:', server_settings[key]);
           //console.log('Now:', value);
-          await client.req.post('/0/settings/' + key, value, {
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          });
+          try {
+            await client.req.post('/0/settings/' + key, value, {
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            });
+          } catch (error) {
+            // One failing key must not abort the loop, otherwise every later
+            // key (e.g. columnVisibilityData) is silently never persisted.
+            console.error('Failed to save setting', key, error);
+          }
         }
       }
 
@@ -230,7 +253,14 @@ export const useSettingsStore = defineStore('settings', {
     },
     async update(new_state: Record<string, any>) {
       console.log('Updating state', new_state);
-      this.$patch(new_state);
+      // Replace the given top-level keys instead of deep-merging: a merge can
+      // never DELETE nested keys, so e.g. removing a saved column-visibility
+      // entry would silently keep the old value.
+      this.$patch(state => {
+        for (const [key, value] of Object.entries(new_state)) {
+          state[key] = value;
+        }
+      });
       await this.save();
     },
   },
