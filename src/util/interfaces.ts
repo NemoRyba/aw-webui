@@ -242,6 +242,8 @@ export interface IRedmineComparisonResponse {
   totals: { redmine_hours: number; redmine_seconds: number };
   message?: string;
   error?: string;
+  error_code?: string;
+  error_detail?: string;
 }
 
 export interface IFleetDeviceDetail {

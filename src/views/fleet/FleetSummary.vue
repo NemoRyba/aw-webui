@@ -420,8 +420,12 @@ export default {
           this.redmineLoadError = comparison.message || this.$tr('Redmine integration is disabled');
         }
       } catch (error) {
+        const errorData = error?.response?.data || {};
         this.redmineLoadError =
-          error?.response?.data?.message || this.$tr('Unable to load Redmine comparison');
+          errorData.error ||
+          errorData.message ||
+          errorData.detail ||
+          this.$tr('Unable to load Redmine comparison');
       } finally {
         this.redmineLoading = false;
       }
