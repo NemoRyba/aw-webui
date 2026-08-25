@@ -66,6 +66,7 @@ div
         :windowInterval="timelineWindowInterval"
         :swimlane="swimlane"
         :updateTimelineWindow='updateTimelineWindow'
+        @events-changed="handleEventsChanged"
       )
 
     aw-devonly(v-if="timelineSections.length === 1" reason="Not ready for production, still experimenting")
@@ -205,6 +206,7 @@ export default {
           sortUsername: identity.username,
           sortSessionId: identity.sessionId,
           sortWatcherLabel: identity.watcherLabel,
+          defaultSelected: String(bucket.type || '') === 'currentwindow',
         });
       }
 
@@ -411,6 +413,11 @@ export default {
     selectAllWatchers() {
       this.selectedWatcherKeys = this.watcherOptions.map(option => option.value);
     },
+    handleEventsChanged() {
+      // Reload events after an edit/delete/restore without moving the window.
+      this.updateTimelineWindow = false;
+      this.getBuckets();
+    },
     focusTimelineRange(interval) {
       this.timelineWindowInterval = interval;
       this.updateTimelineWindow = true;
@@ -427,7 +434,12 @@ export default {
 
       const filteredSelection = this.selectedWatcherKeys.filter(value => available.includes(value));
       if (filteredSelection.length === 0) {
-        this.selectedWatcherKeys = [...available];
+        // Default: only window watchers; everything else starts disabled.
+        // Fall back to all watchers if no window watcher exists in range.
+        const defaultSelection = this.watcherOptions
+          .filter((option: any) => option.defaultSelected)
+          .map(option => option.value);
+        this.selectedWatcherKeys = defaultSelection.length > 0 ? defaultSelection : [...available];
         return;
       }
 

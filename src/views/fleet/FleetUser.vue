@@ -9,6 +9,7 @@ div
         | {{ deviceCountLabel }}
     div.fleet-user-actions.ml-auto
       b-form-select.fleet-user-select(
+        v-if="canBrowseUsers"
         size="sm"
         :value="username"
         :options="userOptions"
@@ -63,6 +64,14 @@ div
             @click="cancelUserLoad"
           )
             | {{ $tr('Cancel') }}
+    div.mt-3(v-if="loading && loadProgress && loadProgress.total_days > 0")
+      b-progress(
+        :value="loadProgress.days_done"
+        :max="loadProgress.total_days"
+        height="0.45rem"
+        animated
+      )
+      div.small.text-muted.mt-1 {{ progressDetailLine }}
     div.mt-3(v-if="user && user.available_devices.length")
       div.d-flex.align-items-center.mb-2
         div.small.text-muted
@@ -146,9 +155,10 @@ import 'vue-awesome/icons/arrow-right';
 import 'vue-awesome/icons/sync';
 
 import { useSettingsStore } from '~/stores/settings';
+import { useAuthStore } from '~/stores/auth';
 import { useFleetStore } from '~/stores/fleet';
 import { getClient } from '~/util/awclient';
-import { orderFields } from '~/util/columnOrder';
+import { applyColumnPreferences } from '~/util/columnOrder';
 
 export default {
   name: 'FleetUser',
@@ -164,15 +174,22 @@ export default {
     return {
       fleetStore: useFleetStore(),
       settingsStore: useSettingsStore(),
-      startDate: moment().format('YYYY-MM-DD'),
-      endDate: moment().format('YYYY-MM-DD'),
+      startDate: this.validQueryDate(this.$route?.query?.start) || moment().format('YYYY-MM-DD'),
+      endDate:
+        this.validQueryDate(this.$route?.query?.end) ||
+        this.validQueryDate(this.$route?.query?.start) ||
+        moment().format('YYYY-MM-DD'),
       selectedDeviceIds: [],
+      userRequestId: 0,
       summaryRecalculating: false,
       loading: false,
       loadError: '',
       loadCancelled: false,
       loadElapsedSeconds: 0,
       loadElapsedTimer: null,
+      loadProgress: null,
+      progressSamples: [],
+      progressPolling: false,
       tableKeys: {
         apps: 'fleet-user-apps',
         sessions: 'fleet-user-sessions',
@@ -190,10 +207,7 @@ export default {
       ];
     },
     appFields() {
-      return orderFields(
-        this.defaultAppFields,
-        this.settingsStore.columnOrdersData?.[this.tableKeys.apps]
-      );
+      return applyColumnPreferences(this.defaultAppFields, this.settingsStore, this.tableKeys.apps);
     },
     defaultSessionFields() {
       return [
@@ -205,13 +219,17 @@ export default {
       ];
     },
     sessionFields() {
-      return orderFields(
-        this.defaultSessionFields,
-        this.settingsStore.columnOrdersData?.[this.tableKeys.sessions]
-      );
+      return applyColumnPreferences(this.defaultSessionFields, this.settingsStore, this.tableKeys.sessions);
     },
     user() {
       return this.fleetStore.userDetails[this.username] || null;
+    },
+    authIsAdmin() {
+      return useAuthStore().isAdmin;
+    },
+    canBrowseUsers() {
+      const authStore = useAuthStore();
+      return authStore.isAdmin || authStore.allowedPages.includes('fleet-users');
     },
     userOptions() {
       const usersByName = new Map();
@@ -271,25 +289,107 @@ export default {
       return end.isBefore(moment().startOf('day'), 'day');
     },
     loadingLabel() {
-      if (this.loadElapsedSeconds > 0) {
-        return `${this.$tr('Loading...')} ${this.loadElapsedSeconds}s`;
+      const base =
+        this.loadElapsedSeconds > 0
+          ? `${this.$tr('Loading...')} ${this.loadElapsedSeconds}s`
+          : this.$tr('Loading...');
+      if (this.loadProgress && this.loadProgress.total_days > 0) {
+        return `${base} (${this.loadProgress.days_done}/${this.loadProgress.total_days})`;
       }
-      return this.$tr('Loading...');
+      return base;
+    },
+    progressEtaSeconds() {
+      const progress = this.loadProgress;
+      const samples = this.progressSamples;
+      if (!progress || samples.length < 2) {
+        return null;
+      }
+      const first = samples[0];
+      const last = samples[samples.length - 1];
+      const advanced = last.done - first.done;
+      const elapsedMs = last.t - first.t;
+      if (advanced <= 0 || elapsedMs <= 0) {
+        return null;
+      }
+      const remaining = Math.max(0, Number(progress.total_days || 0) - last.done);
+      if (remaining === 0) {
+        return 0;
+      }
+      const secondsPerDay = elapsedMs / 1000 / advanced;
+      return Math.round(remaining * secondsPerDay);
+    },
+    progressDetailLine() {
+      const progress = this.loadProgress;
+      if (!progress || !progress.total_days) {
+        return '';
+      }
+      const parts = [
+        this.$tr('Day {done} of {total} loaded', {
+          done: progress.days_done,
+          total: progress.total_days,
+        }),
+      ];
+      if (progress.current_day) {
+        parts.push(progress.current_day);
+      }
+      const eta = this.progressEtaSeconds;
+      if (eta !== null && eta > 5) {
+        const minutes = Math.floor(eta / 60);
+        const seconds = eta % 60;
+        parts.push(
+          `${this.$tr('approx. {time} remaining', {
+            time: minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`,
+          })}`
+        );
+      }
+      return parts.join(' — ');
     },
   },
   watch: {
     username: async function () {
+      this.syncDatesFromQuery();
       await this.refresh();
+    },
+    '$route.query': function (newQuery, oldQuery) {
+      if (
+        (newQuery?.start || '') !== (oldQuery?.start || '') ||
+        (newQuery?.end || '') !== (oldQuery?.end || '')
+      ) {
+        if (this.syncDatesFromQuery()) {
+          this.refresh();
+        }
+      }
     },
   },
   async mounted() {
-    await this.loadUsers();
+    if (this.canBrowseUsers) {
+      await this.loadUsers();
+    }
     await this.refresh();
   },
   beforeDestroy() {
     this.stopLoadTimer();
   },
   methods: {
+    validQueryDate(value) {
+      if (typeof value !== 'string') {
+        return null;
+      }
+      return moment(value, 'YYYY-MM-DD', true).isValid() ? value : null;
+    },
+    syncDatesFromQuery() {
+      const start = this.validQueryDate(this.$route?.query?.start);
+      const end = this.validQueryDate(this.$route?.query?.end) || start;
+      if (!start) {
+        return false;
+      }
+      if (this.startDate === start && this.endDate === end) {
+        return false;
+      }
+      this.startDate = start;
+      this.endDate = end;
+      return true;
+    },
     async loadUsers() {
       await this.fleetStore.loadUsers();
     },
@@ -356,9 +456,45 @@ export default {
     startLoadTimer() {
       this.stopLoadTimer();
       this.loadElapsedSeconds = 0;
+      this.loadProgress = null;
+      this.progressSamples = [];
       this.loadElapsedTimer = window.setInterval(() => {
         this.loadElapsedSeconds += 1;
+        if (this.loadElapsedSeconds % 2 === 0) {
+          this.pollLoadProgress();
+        }
       }, 1000);
+    },
+    async pollLoadProgress() {
+      // One tiny GET (an in-memory lookup server-side) every 2s while loading.
+      if (!this.loading || this.progressPolling) {
+        return;
+      }
+      this.progressPolling = true;
+      try {
+        const progress = await this.fleetStore.loadUserSummaryProgress(
+          this.username,
+          this.buildParams()
+        );
+        if (!this.loading) {
+          return;
+        }
+        if (progress && progress.total_days > 0) {
+          this.loadProgress = progress;
+          const done = Number(progress.days_done || 0);
+          const last = this.progressSamples[this.progressSamples.length - 1];
+          if (!last || last.done !== done) {
+            this.progressSamples.push({ t: Date.now(), done });
+            if (this.progressSamples.length > 30) {
+              this.progressSamples.shift();
+            }
+          }
+        }
+      } catch (error) {
+        // Progress is best-effort; never disturb the main load because of it.
+      } finally {
+        this.progressPolling = false;
+      }
     },
     stopLoadTimer() {
       if (this.loadElapsedTimer) {
@@ -376,6 +512,8 @@ export default {
       );
     },
     cancelUserLoad() {
+      // Invalidate any in-flight request so its response is ignored.
+      this.userRequestId += 1;
       this.loadCancelled = true;
       this.loading = false;
       this.stopLoadTimer();
@@ -387,8 +525,16 @@ export default {
       }
     },
     async refresh() {
-      if (this.loading) {
-        return;
+      // NOTE: no early-return while loading. Clicking "Next day" during a load
+      // must start a fresh request for the NEW date — the old blocking guard
+      // silently skipped the reload and left the previous day's data on
+      // screen. Overlapping requests are resolved latest-wins instead.
+      const requestId = ++this.userRequestId;
+
+      // Keep the URL in sync so reload/back restores the same day.
+      const query = { ...this.$route.query, start: this.startDate, end: this.endDate };
+      if (query.start !== this.$route.query.start || query.end !== this.$route.query.end) {
+        this.$router.replace({ query }).catch(() => undefined);
       }
 
       this.loading = true;
@@ -397,8 +543,14 @@ export default {
       this.startLoadTimer();
       try {
         const user = await this.fleetStore.loadUser(this.username, this.buildParams());
+        if (requestId !== this.userRequestId) {
+          return;
+        }
         this.selectedDeviceIds = user.selected_devices || [];
       } catch (error) {
+        if (requestId !== this.userRequestId) {
+          return;
+        }
         if (this.isCancelledError(error)) {
           this.loadCancelled = true;
           return;
@@ -406,8 +558,10 @@ export default {
         console.error('Unable to load fleet user:', error);
         this.loadError = this.$tr('Unable to load user data');
       } finally {
-        this.loading = false;
-        this.stopLoadTimer();
+        if (requestId === this.userRequestId) {
+          this.loading = false;
+          this.stopLoadTimer();
+        }
       }
     },
     async recalculateSummary() {

@@ -115,6 +115,19 @@ export default {
       type: Number,
       default: 360,
     },
+    // Optional synced visible window (e.g. from the watcher timeline).
+    // When set, the x axis renders exactly this window instead of the full
+    // range and the internal horizontal scrollbar is disabled — panning and
+    // zooming are then driven by the companion timeline. The y (%) axis is
+    // unaffected.
+    windowStart: {
+      type: [String, Date, Object],
+      default: null,
+    },
+    windowEnd: {
+      type: [String, Date, Object],
+      default: null,
+    },
   },
   data() {
     return {
@@ -148,6 +161,20 @@ export default {
         this.rangeEnd.isAfter(this.rangeStart)
       );
     },
+    hasSyncedWindow() {
+      if (!this.windowStart || !this.windowEnd) {
+        return false;
+      }
+      const start = moment(this.windowStart);
+      const end = moment(this.windowEnd);
+      return start.isValid() && end.isValid() && end.isAfter(start);
+    },
+    domainStart() {
+      return this.hasSyncedWindow ? moment(this.windowStart) : this.rangeStart;
+    },
+    domainEnd() {
+      return this.hasSyncedWindow ? moment(this.windowEnd) : this.rangeEnd;
+    },
     queryKey() {
       return [
         this.metricDeviceIds.join('|'),
@@ -170,7 +197,9 @@ export default {
       return this.metricDevices.length > 0;
     },
     metricsChartMinWidth() {
-      if (!this.canLoad) {
+      if (!this.canLoad || this.hasSyncedWindow) {
+        // Synced with the timeline: it drives panning/zooming, so the wave
+        // must not scroll on its own.
         return '100%';
       }
 
@@ -196,8 +225,8 @@ export default {
       }
 
       const ticks = [];
-      const startMs = this.rangeStart.valueOf();
-      const endMs = this.rangeEnd.valueOf();
+      const startMs = this.domainStart.valueOf();
+      const endMs = this.domainEnd.valueOf();
       const span = Math.max(1, endMs - startMs);
       const tickCount = 5;
 
@@ -288,6 +317,9 @@ export default {
         return '';
       }
 
+      const startMs = this.domainStart.valueOf();
+      const endMs = this.domainEnd.valueOf();
+      const pad = Math.max(1, endMs - startMs) * 0.02;
       const points = (device.samples || [])
         .map(sample => {
           const value = this.sampleValue(sample, field);
@@ -295,8 +327,14 @@ export default {
           if (value === null || !timestamp.isValid()) {
             return null;
           }
+          const ms = timestamp.valueOf();
+          // Keep one padding step beyond each edge so lines run to the border
+          // without piling clamped points on it.
+          if (ms < startMs - pad || ms > endMs + pad) {
+            return null;
+          }
           return {
-            x: this.xForTimestamp(timestamp.valueOf()),
+            x: this.xForTimestamp(ms),
             y: this.yForPercent(value),
           };
         })
@@ -316,8 +354,8 @@ export default {
       return points.map((point: any) => `${point.x.toFixed(1)},${point.y}`).join(' ');
     },
     xForTimestamp(timestamp) {
-      const startMs = this.rangeStart.valueOf();
-      const endMs = this.rangeEnd.valueOf();
+      const startMs = this.domainStart.valueOf();
+      const endMs = this.domainEnd.valueOf();
       const ratio = (Number(timestamp || 0) - startMs) / Math.max(1, endMs - startMs);
       return Math.max(0, Math.min(1000, ratio * 1000));
     },
@@ -371,7 +409,7 @@ export default {
     },
     formatAxisTimestamp(value) {
       const timestamp = moment(value);
-      const hours = this.rangeEnd.diff(this.rangeStart, 'hours', true);
+      const hours = this.domainEnd.diff(this.domainStart, 'hours', true);
       if (hours <= 30) {
         return timestamp.format('HH:mm');
       }

@@ -212,6 +212,7 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Saving...': 'Speichert...',
     'Invalid username or password': 'Ungültiger Benutzername oder ungültiges Passwort',
     online: 'online',
+    offline: 'offline',
     stale: 'veraltet',
     active: 'aktiv',
     afk: 'AFK',
@@ -330,15 +331,28 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Unable to load fleet users': 'Flotten-Benutzer konnten nicht geladen werden',
     'Redmine user mapping': 'Redmine-Benutzerzuordnung',
     'Daily comparison': 'Tagesvergleich',
+    'Open in single user view': 'In Einzelbenutzeransicht oeffnen',
+    'Day {done} of {total} loaded': 'Tag {done} von {total} geladen',
+    'approx. {time} remaining': 'ca. {time} verbleibend',
     'Edited / manual events': 'Bearbeitete / manuelle Events',
     'Hide edited and manual events': 'Bearbeitete und manuelle Events ausblenden',
     'Only edited and manual events': 'Nur bearbeitete und manuelle Events',
     'Manually created event': 'Manuell erstelltes Event',
+    Delete: 'Loeschen',
+    Restore: 'Wiederherstellen',
+    'Delete event': 'Event loeschen',
+    'Delete this event? It is moved to the trash bucket and can be restored from there.':
+      'Dieses Event loeschen? Es wird in den Papierkorb-Bucket verschoben und kann von dort wiederhergestellt werden.',
     Created: 'Erstellt',
     Edited: 'Bearbeitet',
     History: 'Verlauf',
     'Unable to create manual event': 'Manuelles Event konnte nicht erstellt werden',
     'Load daily comparison': 'Tagesvergleich laden',
+    'Reload this day': 'Diesen Tag neu laden',
+    'Landing page (admins)': 'Startseite (Admins)',
+    'Landing page (users)': 'Startseite (Benutzer)',
+    'The page to open when opening ActivityWatch, or clicking the logo in the top menu. Users only get pages they can see.':
+      'Die Seite, die beim Oeffnen von ActivityWatch oder beim Klick auf das Logo angezeigt wird. Benutzer erhalten nur Seiten, die sie sehen koennen.',
     Bookings: 'Buchungen',
     'No bookings': 'Keine Buchungen',
     'No Redmine user mapped': 'Kein Redmine-Benutzer zugeordnet',
@@ -838,6 +852,175 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     "Note: Changes won't be reflected in the timeline until the page is refreshed. This will be improved in a future version.":
       'Hinweis: Änderungen werden in der Zeitachse erst nach dem Neuladen der Seite sichtbar. Das wird in einer zukünftigen Version verbessert.',
     'selected multiple items: {items}': 'Mehrere Elemente ausgewählt: {items}',
+    Administration: 'Administration',
+    'Watcher updates': 'Watcher-Updates',
+
+    // Per-user page access: the Zusammenfassung restricted to the own row
+    'Own summary': 'Eigene Zusammenfassung',
+    'Only your own data is shown on this page.':
+      'Auf dieser Seite werden nur deine eigenen Daten angezeigt.',
+
+    // Device enrollment (Administration -> Geräte)
+    'Devices register themselves when the watchers start. Approve one and it can send data - no token has to be carried to it.':
+      'Geräte melden sich beim Start der Watcher selbst an. Nach der Freigabe dürfen sie Daten senden - es muss kein Token zum Gerät getragen werden.',
+    'Devices are waiting for approval. Until you approve them they record locally but send nothing.':
+      'Geräte warten auf Freigabe. Bis zur Freigabe zeichnen sie lokal auf, senden aber nichts.',
+    'Token enforcement is off, so unapproved devices can still send data. Approve every device you expect, then switch enforcement on under Fleet-Zugriffstoken.':
+      'Die Token-Pflicht ist aus, daher können auch nicht freigegebene Geräte Daten senden. Erst alle erwarteten Geräte freigeben, dann die Token-Pflicht unter Flotten-Zugriffstoken einschalten.',
+    Approve: 'Freigeben',
+    Approved: 'Freigegeben',
+    'Approved by': 'Freigegeben von',
+    Reject: 'Ablehnen',
+    Rejected: 'Abgelehnt',
+    Revoke: 'Freigabe entziehen',
+    'Waiting for approval': 'Wartet auf Freigabe',
+    'First seen': 'Zuerst gesehen',
+    'No devices have registered yet': 'Noch keine Geräte angemeldet',
+    'Devices approved': 'Geräte freigegeben',
+    'Devices revoked': 'Freigabe entzogen',
+    'Devices removed': 'Geräte entfernt',
+    'Revoke {n} device(s)? They stop being able to send data as soon as token enforcement is on.':
+      '{n} Gerät(en) die Freigabe entziehen? Sobald die Token-Pflicht aktiv ist, können sie keine Daten mehr senden.',
+    'Remove {n} device(s) from the list? A device that is still running will register again.':
+      '{n} Gerät(e) aus der Liste entfernen? Ein weiterhin laufendes Gerät meldet sich erneut an.',
+    'The fingerprint identifies the key the device generated. If two rows share a hostname, compare it before approving.':
+      'Der Fingerabdruck kennzeichnet den vom Gerät erzeugten Schlüssel. Wenn zwei Zeilen denselben Namen haben, vorher vergleichen.',
+    'Unable to load': 'Laden fehlgeschlagen',
+
+    // Moving the fleet server (Administration)
+    'Move the server': 'Server umziehen',
+    'Announce a new address and every device switches to it by itself, so the server can move to another computer or IP without visiting any PC.':
+      'Eine neue Adresse ankündigen - jedes Gerät wechselt selbständig dorthin. So kann der Server auf einen anderen Rechner oder eine andere IP umziehen, ohne dass ein PC besucht werden muss.',
+    'Order matters: start the new server FIRST and announce the new address while this server is still reachable by the devices. They learn it from the update check they already run every minute.':
+      'Die Reihenfolge zählt: den neuen Server ZUERST starten und die neue Adresse ankündigen, solange dieser Server für die Geräte noch erreichbar ist. Sie erfahren sie über die Update-Prüfung, die ohnehin jede Minute läuft.',
+    'New server address': 'Neue Server-Adresse',
+    'Announce address': 'Adresse ankündigen',
+    'The server checks that an ActivityWatch server actually answers there before announcing it. Each device checks again itself, and refuses to switch to an address it cannot reach.':
+      'Der Server prüft vor dem Ankündigen, ob dort wirklich ein ActivityWatch-Server antwortet. Jedes Gerät prüft nochmals selbst und wechselt nicht zu einer nicht erreichbaren Adresse.',
+    'Announce even if the new server does not answer yet (not recommended)':
+      'Auch ankündigen, wenn der neue Server noch nicht antwortet (nicht empfohlen)',
+    'Currently announced': 'Aktuell angekündigt',
+    'Set by': 'Gesetzt von',
+    on: 'am',
+    'Devices that have already switched now talk to that address. Clear this only after every device has moved, or they will switch back.':
+      'Bereits gewechselte Geräte sprechen jetzt mit dieser Adresse. Erst zurücksetzen, wenn alle Geräte umgezogen sind - sonst wechseln sie zurück.',
+    'Stop announcing': 'Ankündigung beenden',
+    'No move is being announced; devices use the address built into their watcher package.':
+      'Es wird kein Umzug angekündigt; die Geräte verwenden die in ihrem Watcher-Paket hinterlegte Adresse.',
+    'Every device will switch to {url}. Make sure the new server is running and holds the fleet data, and keep THIS server reachable until all devices have moved.':
+      'Alle Geräte wechseln zu {url}. Stelle sicher, dass der neue Server läuft und die Flottendaten enthält, und halte DIESEN Server erreichbar, bis alle Geräte umgezogen sind.',
+    'Address announced - devices switch within about a minute.':
+      'Adresse angekündigt - die Geräte wechseln innerhalb von etwa einer Minute.',
+    'Stop announcing the new address? Devices that already switched keep using it; devices that have not switched yet will stay where they are.':
+      'Ankündigung der neuen Adresse beenden? Bereits gewechselte Geräte verwenden sie weiter; noch nicht gewechselte Geräte bleiben, wo sie sind.',
+
+    // Manual watcher rollout (Administration -> Watcher-Updates)
+    'Update devices manually': 'Geräte manuell aktualisieren',
+    'Select devices and update them now - independent of the automatic switch. The device installs within about a minute.':
+      'Geräte auswählen und sofort aktualisieren - unabhängig vom Automatik-Schalter. Das Gerät installiert innerhalb von etwa einer Minute.',
+    'Clear selection': 'Auswahl aufheben',
+    'Update selected': 'Ausgewählte aktualisieren',
+    'Update all': 'Alle aktualisieren',
+    'Update now': 'Jetzt aktualisieren',
+    'Update requested': 'Update angefordert',
+    'Update running': 'Update läuft',
+    'Manual update starting': 'Manuelles Update wird gestartet',
+    'Manual update failed recently, retrying shortly':
+      'Manuelles Update zuletzt fehlgeschlagen, nächster Versuch in Kürze',
+    'Waiting for devices to pick up the update': 'Warte auf Geräte, die das Update abholen',
+    'Cancel pending updates': 'Ausstehende Updates abbrechen',
+    'Pending updates cancelled': 'Ausstehende Updates abgebrochen',
+    'Install the current watcher package on {n} device(s) now? The watchers restart briefly, so a short gap in the recording is expected.':
+      'Das aktuelle Watcher-Paket jetzt auf {n} Gerät(en) installieren? Die Watcher starten kurz neu, eine kurze Lücke in der Aufzeichnung ist zu erwarten.',
+    'Update queued for {n} device(s) - they install it within about a minute.':
+      'Update für {n} Gerät(e) eingeplant - sie installieren es innerhalb von etwa einer Minute.',
+    'Devices still running a watcher build from before the auto-update feature never poll the server - they show "Never reported" and need the installer run on them once by hand.':
+      'Geräte mit einem Watcher-Build von vor der Auto-Update-Funktion fragen den Server nie ab - sie stehen auf "Nie gemeldet" und brauchen einmal einen manuellen Installer-Lauf.',
+
+    // Fleet access token (Administration)
+    'Fleet access token': 'Flotten-Zugriffstoken',
+    'Watchers have no login, so they authenticate with this shared token. Everything a browser reads always requires a login.':
+      'Watcher haben keinen Login und weisen sich daher mit diesem gemeinsamen Token aus. Alles, was ein Browser liest, erfordert immer eine Anmeldung.',
+    'Require token for watcher traffic': 'Token für Watcher-Verkehr verlangen',
+    'Require token': 'Token verlangen',
+    'While this is off, any device on the LAN can send watcher data. While it is on, only devices holding the token can.':
+      'Solange dies aus ist, kann jedes Gerät im LAN Watcher-Daten senden. Solange es an ist, nur Geräte mit dem Token.',
+    'Turn this on only after every device has been given the token, otherwise those devices stop recording. Run the watcher installer with -FleetToken on each device first.':
+      'Erst einschalten, wenn jedes Gerät das Token erhalten hat - sonst hören diese Geräte auf aufzuzeichnen. Vorher auf jedem Gerät den Watcher-Installer mit -FleetToken ausführen.',
+    'Devices without the token will stop recording immediately. Has every device been given the token?':
+      'Geräte ohne Token hören sofort auf aufzuzeichnen. Hat jedes Gerät das Token erhalten?',
+    Token: 'Token',
+    'Provision a device with: install-watchers.ps1 -FleetToken <token>. The token is stored per machine and survives watcher updates.':
+      'Ein Gerät einrichten mit: install-watchers.ps1 -FleetToken <token>. Das Token wird pro Rechner gespeichert und überlebt Watcher-Updates.',
+    'Show token': 'Token anzeigen',
+    Copy: 'Kopieren',
+    Copied: 'Kopiert',
+    'Generate new token': 'Neues Token erzeugen',
+    'A new token invalidates the old one. Every device has to be given the new token before it can send data again.':
+      'Ein neues Token macht das alte ungültig. Jedes Gerät braucht das neue Token, bevor es wieder Daten senden kann.',
+    'Devices known to the fleet': 'Der Flotte bekannte Geräte',
+    'reporting watchers': 'meldende Watcher',
+    Saved: 'Gespeichert',
+    'Roll out new watcher builds to all fleet devices from here.':
+      'Von hier aus neue Watcher-Builds an alle Geräte der Flotte verteilen.',
+    'Embedded watcher package': 'Eingebettetes Watcher-Paket',
+    'No watcher package available. Upload one below or run rebuild-watchers-setup.cmd and then rebuild-server-setup.cmd.':
+      'Kein Watcher-Paket vorhanden. Unten eines hochladen oder zuerst rebuild-watchers-setup.cmd und dann rebuild-server-setup.cmd ausführen.',
+    'Automatic watcher updates': 'Automatische Watcher-Updates',
+    'Automatic watcher updates enabled': 'Automatische Watcher-Updates aktiviert',
+    'Automatic watcher updates disabled': 'Automatische Watcher-Updates deaktiviert',
+    'Devices check for updates about once a minute and install them silently in the background.':
+      'Die Geräte prüfen etwa einmal pro Minute auf Updates und installieren sie unbemerkt im Hintergrund.',
+    Version: 'Version',
+    Built: 'Erstellt',
+    Size: 'Größe',
+    Device: 'Gerät',
+    'Reported version': 'Gemeldete Version',
+    'Last report': 'Letzte Meldung',
+    'Up to date': 'Aktuell',
+    Outdated: 'Veraltet',
+    Updating: 'Aktualisiert gerade',
+    'Never reported': 'Nie gemeldet',
+    'Never reported - run the watcher installer on this device once':
+      'Nie gemeldet - Watcher-Installer auf diesem Gerät einmal manuell ausführen',
+    'Update starting': 'Update wird gestartet',
+    'Update recently attempted, waiting': 'Update kürzlich versucht, wartet',
+    'Update available, auto-update disabled': 'Update verfügbar, Auto-Update deaktiviert',
+    'No package on server': 'Kein Paket auf dem Server',
+    'No devices have reported yet': 'Noch keine Geräte gemeldet',
+    'Unable to load watcher update status': 'Watcher-Update-Status konnte nicht geladen werden',
+    'Unable to save': 'Speichern fehlgeschlagen',
+    'Uploaded package': 'Hochgeladenes Paket',
+    'Embedded package': 'Eingebettetes Paket',
+    'Embedded in server build': 'Im Server-Build eingebettet',
+    'No package embedded in the server build': 'Kein Paket im Server-Build eingebettet',
+    'Remove uploaded package': 'Hochgeladenes Paket entfernen',
+    'Uploaded package removed': 'Hochgeladenes Paket entfernt',
+    'Remove the uploaded package and fall back to the package embedded in the server build?':
+      'Hochgeladenes Paket entfernen und auf das im Server-Build eingebettete Paket zurückfallen?',
+    'The package embedded in this server build is newer than the uploaded one. Remove the uploaded package to distribute the embedded one.':
+      'Das im Server-Build eingebettete Paket ist neuer als das hochgeladene. Entferne das hochgeladene Paket, um das eingebettete zu verteilen.',
+    'Distribute a new watcher package': 'Neues Watcher-Paket verteilen',
+    'Upload the ActivityWatch-Fleet-Watchers-Update.zip produced by rebuild-watchers-setup.cmd (payload.zip works too). The server distributes it immediately - no server rebuild needed.':
+      'Die von rebuild-watchers-setup.cmd erzeugte ActivityWatch-Fleet-Watchers-Update.zip hochladen (payload.zip geht auch). Der Server verteilt sie sofort - kein Server-Neubau nötig.',
+    'Choose zip file...': 'Zip-Datei auswählen...',
+    Browse: 'Durchsuchen',
+    'Upload and distribute': 'Hochladen und verteilen',
+    'Uploading...': 'Lädt hoch...',
+    'Upload failed': 'Hochladen fehlgeschlagen',
+    'Watcher package uploaded - devices will pick it up within a minute once auto-update is enabled':
+      'Watcher-Paket hochgeladen - die Geräte übernehmen es innerhalb einer Minute, sobald Auto-Update aktiviert ist',
+    'Device online': 'Gerät online',
+    'Device offline': 'Gerät offline',
+    'My evaluation': 'Meine Auswertung',
+    'Users and page access': 'Benutzer und Seiten-Zugriff',
+    'Non-admins always see their own evaluation; grant additional fleet pages and an optional start page per user here.':
+      'Nicht-Admins sehen immer ihre eigene Auswertung; zusätzliche Flotten-Seiten und eine optionale Startseite werden hier pro Benutzer freigeschaltet.',
+    'Page access': 'Seiten-Zugriff',
+    'Start page': 'Startseite',
+    'All pages': 'Alle Seiten',
+    'Own view (default)': 'Eigene Auswertung (Standard)',
+    'Live (default)': 'Live (Standard)',
   }
 );
 

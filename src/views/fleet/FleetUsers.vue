@@ -38,7 +38,7 @@ div
 <script lang="ts">
 import { useFleetStore } from '~/stores/fleet';
 import { useSettingsStore } from '~/stores/settings';
-import { orderFields } from '~/util/columnOrder';
+import { applyColumnPreferences } from '~/util/columnOrder';
 
 export default {
   name: 'FleetUsers',
@@ -63,7 +63,7 @@ export default {
       ];
     },
     fields() {
-      return orderFields(this.defaultFields, this.settingsStore.columnOrdersData?.[this.tableKey]);
+      return applyColumnPreferences(this.defaultFields, this.settingsStore, this.tableKey);
     },
     users() {
       return this.fleetStore.users;

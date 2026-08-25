@@ -63,7 +63,8 @@ export default {
     },
     allowVisibility: {
       type: Boolean,
-      default: false,
+      // Visibility switches are a default capability of every column dialog.
+      default: true,
     },
     defaultHiddenColumns: {
       type: Array,

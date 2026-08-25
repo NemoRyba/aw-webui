@@ -11,7 +11,7 @@ div(:class="{'fixed-top-padding': fixedTopMenu}")
 
     b-collapse#nav-collapse(is-nav)
       b-navbar-nav
-        b-nav-item(to="/timeline" style="font-color: #000;")
+        b-nav-item(v-if="authIsAdmin" to="/timeline" style="font-color: #000;")
           div.px-2.px-lg-1
             icon(name="stream")
             | {{ $tr('Timeline') }}
@@ -33,6 +33,22 @@ div(:class="{'fixed-top-padding': fixedTopMenu}")
           span.ml-2.align-middle(style="font-size: 1.0em; color: #000;") ActivityWatch
 
       b-navbar-nav.ml-auto
+        // Logged-in user first in the right-side group; shows the actual
+        // username of whoever is signed in.
+        b-nav-item-dropdown(right)
+          template(slot="button-content")
+            div.d-inline.px-2.px-lg-1
+              icon(name="user")
+              | {{ authUsername }}
+          b-dropdown-item-button(disabled)
+            | {{ authRoleLabel }}
+          b-dropdown-divider
+          b-dropdown-item(v-if="authIsAdmin" to="/admin")
+            | {{ $tr('Administration') }}
+          b-dropdown-divider(v-if="authIsAdmin")
+          b-dropdown-item-button(@click="logout")
+            | {{ $tr('Log out') }}
+
         b-nav-item-dropdown(right)
           template(slot="button-content")
             div.d-inline.px-2.px-lg-1
@@ -46,44 +62,15 @@ div(:class="{'fixed-top-padding': fixedTopMenu}")
           )
             | {{ option.text }}
 
-        b-nav-item-dropdown(right)
-          template(slot="button-content")
-            div.d-inline.px-2.px-lg-1
-              icon(name="user")
-              | {{ authUsername }}
-          b-dropdown-item-button(disabled)
-            | {{ authRoleLabel }}
-          b-dropdown-item-button(v-if="authIsAdmin" @click="openAdminSettings")
-            | {{ $tr('Admin settings') }}
-          b-dropdown-divider
-          b-dropdown-item-button(@click="logout")
-            | {{ $tr('Log out') }}
-
-        b-nav-item(to="/buckets")
+        b-nav-item(v-if="authIsAdmin" to="/buckets")
           div.px-2.px-lg-1
             icon(name="database")
             | {{ $tr('Raw Data') }}
-        b-nav-item(to="/settings")
+        b-nav-item(v-if="authIsAdmin" to="/settings")
           div.px-2.px-lg-1
             icon(name="cog")
             | {{ $tr('Settings') }}
 
-  b-modal(
-    id="admin-settings-modal"
-    ref="adminSettingsModal"
-    :title="$tr('Admin settings')"
-    :ok-title="adminSettingsSaving ? $tr('Saving...') : $tr('Save')"
-    :cancel-title="$tr('Cancel')"
-    :ok-disabled="adminSettingsSaving"
-    :cancel-disabled="adminSettingsSaving"
-    @show="resetAdminSettingsDraft"
-    @ok="handleAdminSettingsOk"
-  )
-    p.text-muted.mb-3 {{ $tr('Change which top navigation menus are visible for all users.') }}
-    b-alert.mb-3(v-if="adminSettingsError" show variant="danger")
-      | {{ adminSettingsError }}
-    b-form-checkbox(v-model="adminSettingsDraft.showStopwatchMenu" switch :disabled="adminSettingsSaving")
-      | {{ $tr('Show stopwatch menu') }}
 </template>
 
 <style lang="scss" scoped>
@@ -94,20 +81,29 @@ div(:class="{'fixed-top-padding': fixedTopMenu}")
 
 <script lang="ts">
 // only import the icons you use to reduce bundle size
+import 'vue-awesome/icons/calendar-day';
 import 'vue-awesome/icons/calendar-week';
 import 'vue-awesome/icons/stream';
 import 'vue-awesome/icons/database';
+import 'vue-awesome/icons/search';
+import 'vue-awesome/icons/code';
+import 'vue-awesome/icons/chart-line'; // TODO: switch to chart-column, when vue-awesome supports FA v6
+import 'vue-awesome/icons/chart-pie';
+import 'vue-awesome/icons/flag-checkered';
 import 'vue-awesome/icons/stopwatch';
 import 'vue-awesome/icons/cog';
+import 'vue-awesome/icons/history';
 import 'vue-awesome/icons/globe';
 import 'vue-awesome/icons/user';
+
+// TODO: use circle-nodes instead in the future
+import 'vue-awesome/icons/project-diagram';
+//import 'vue-awesome/icons/cicle-nodes';
 
 import 'vue-awesome/icons/ellipsis-h';
 
 import 'vue-awesome/icons/mobile';
 import 'vue-awesome/icons/desktop';
-
-import _ from 'lodash';
 
 import { mapState } from 'pinia';
 import { useAdminUiStore } from '~/stores/adminUi';
@@ -115,27 +111,18 @@ import { useAuthStore } from '~/stores/auth';
 import { useSettingsStore } from '~/stores/settings';
 import { useBucketsStore } from '~/stores/buckets';
 import { getLanguageOptions } from '~/i18n';
-import { getSettingsLandingPage } from '~/util/landingPage';
-import { IBucket } from '~/util/interfaces';
+import { resolveLandingPage } from '~/util/landingPage';
 
 export default {
   name: 'Header',
   data() {
     return {
-      activityViews: null,
       // Make configurable?
       fixedTopMenu: this.$isAndroid,
-      adminSettingsDraft: {
-        showStopwatchMenu: false,
-        showToolsMenu: true,
-      },
-      adminSettingsSaving: false,
-      adminSettingsError: '',
     };
   },
   computed: {
-    ...mapState(useAdminUiStore, ['showStopwatchMenu', 'showToolsMenu']),
-    ...mapState(useSettingsStore, ['devmode']),
+    ...mapState(useAdminUiStore, ['showStopwatchMenu']),
     authIsAdmin() {
       const authStore = useAuthStore();
       return authStore.isAdmin;
@@ -163,85 +150,19 @@ export default {
     },
     landingPage() {
       const settingsStore = useSettingsStore();
-      return getSettingsLandingPage(settingsStore);
+      const adminUiStore = useAdminUiStore();
+      const authStore = useAuthStore();
+      return resolveLandingPage(settingsStore, adminUiStore, authStore);
     },
   },
   mounted: async function () {
+    // The bucket store is still primed here for the rest of the UI; the old
+    // per-host Activity menu it used to build is gone along with the
+    // /activity routes.
     const bucketStore = useBucketsStore();
     await bucketStore.ensureLoaded();
-    const buckets: IBucket[] = bucketStore.buckets;
-    const types_by_host = {};
-
-    const activityViews = [];
-
-    // TODO: Change to use same bucket detection logic as get_buckets/set_available in store/modules/activity.ts
-    _.each(buckets, v => {
-      types_by_host[v.hostname] = types_by_host[v.hostname] || {};
-      types_by_host[v.hostname].afk ||= v.type == 'afkstatus';
-      types_by_host[v.hostname].window ||= v.type == 'currentwindow';
-      // TODO: Use other bucket type ID in the future
-      types_by_host[v.hostname].android ||= v.type == 'currentwindow' && v.id.includes('android');
-    });
-    //console.log(types_by_host);
-
-    _.each(types_by_host, (types, hostname) => {
-      if (hostname != 'unknown') {
-        activityViews.push({
-          name: hostname,
-          hostname: hostname,
-          type: 'default',
-          pathUrl: `/activity/${hostname}`,
-          icon: 'desktop',
-        });
-      }
-      if (types['android']) {
-        activityViews.push({
-          name: `${hostname} (Android)`,
-          hostname: hostname,
-          type: 'android',
-          pathUrl: `/activity/${hostname}`,
-          icon: 'mobile',
-        });
-      }
-    });
-
-    this.activityViews = activityViews;
   },
   methods: {
-    openAdminSettings() {
-      this.$bvModal.show('admin-settings-modal');
-    },
-    resetAdminSettingsDraft() {
-      const adminUiStore = useAdminUiStore();
-      this.adminSettingsDraft = {
-        showStopwatchMenu: adminUiStore.showStopwatchMenu,
-        showToolsMenu: adminUiStore.showToolsMenu,
-      };
-      this.adminSettingsError = '';
-    },
-    async handleAdminSettingsOk(event) {
-      event.preventDefault();
-      await this.saveAdminSettings();
-    },
-    async saveAdminSettings() {
-      const adminUiStore = useAdminUiStore();
-      this.adminSettingsSaving = true;
-      this.adminSettingsError = '';
-      try {
-        await adminUiStore.update(this.adminSettingsDraft);
-        if (this.$route.path === '/stopwatch' && !adminUiStore.showStopwatchMenu) {
-          await this.$router.replace(this.landingPage);
-        }
-        this.$nextTick(() => {
-          this.$refs.adminSettingsModal.hide();
-        });
-      } catch (e) {
-        console.error('Unable to save admin settings:', e);
-        this.adminSettingsError = this.$tr('Unable to save admin settings');
-      } finally {
-        this.adminSettingsSaving = false;
-      }
-    },
     async logout() {
       const authStore = useAuthStore();
       await authStore.logout();

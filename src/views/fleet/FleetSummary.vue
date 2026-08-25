@@ -44,9 +44,12 @@ div
           b-spinner.mr-1(v-if="loading || redmineLoading" small)
           | {{ loading ? $tr('Loading...') : $tr('Load evaluation') }}
 
-    hr
+    div.small.text-muted.mt-2(v-if="ownSummaryOnly")
+      | {{ $tr('Only your own data is shown on this page.') }}
 
-    div.fleet-summary-picker-header
+    hr(v-if="!ownSummaryOnly")
+
+    div.fleet-summary-picker-header(v-if="!ownSummaryOnly")
       div
         h5.mb-0 {{ $tr('Users') }}
         small.text-muted {{ selectedUsernames.length }} / {{ userOptions.length }}
@@ -60,11 +63,11 @@ div
           | {{ $tr('Select all') }}
         b-button(size="sm" variant="outline-secondary" @click="clearSelectedUsers" :disabled="usersLoading")
           | {{ $tr('Select none') }}
-    div.aw-loading.mt-3(v-if="usersLoading")
+    div.aw-loading.mt-3(v-if="!ownSummaryOnly && usersLoading")
       | {{ $tr('Loading...') }}
-    b-alert.mt-3(v-else-if="usersLoadError" show variant="danger")
+    b-alert.mt-3(v-else-if="!ownSummaryOnly && usersLoadError" show variant="danger")
       | {{ usersLoadError }}
-    div.fleet-summary-user-grid.mt-3(v-else)
+    div.fleet-summary-user-grid.mt-3(v-else-if="!ownSummaryOnly")
       b-form-checkbox.fleet-summary-user-option(
         v-for="user in filteredUserOptions"
         :key="user.username"
@@ -87,14 +90,9 @@ div
         div.text-muted.small(v-if="redmineLoadedAt")
           | {{ $tr('Redmine loaded') }} {{ redmineLoadedAt | friendlytime }}
       div.fleet-summary-table-actions
-        b-button(
-          size="sm"
-          variant="outline-dark"
-          @click="loadRedmineComparison"
-          :disabled="redmineLoading || summaryRows.length === 0"
-        )
-          b-spinner.mr-1(v-if="redmineLoading" small)
-          | {{ redmineLoading ? $tr('Loading Redmine...') : $tr('Load Redmine') }}
+        span.small.text-muted(v-if="redmineLoading")
+          b-spinner.mr-1(small)
+          | {{ $tr('Loading Redmine...') }}
       column-order-editor.ml-auto(
         :table-key="tableKey"
         :fields="defaultFields"
@@ -165,7 +163,7 @@ div
       div.fleet-summary-table-actions
         b-button(
           size="sm"
-          variant="outline-dark"
+          variant="danger"
           @click="loadDailyComparison"
           :disabled="dailyLoading || summaryRows.length === 0"
         )
@@ -178,49 +176,43 @@ div
     div(v-else-if="dailyComparison")
       b-alert(v-if="dailyDays.length === 0" show variant="info")
         | {{ $tr('No daily data found in the selected range.') }}
+      div.fleet-daily-grid-header(v-if="dailyDays.length > 0")
+        span {{ $tr('Username') }}
+        span {{ $tr('Active session time') }}
+        span {{ $tr('Redmine booked time') }}
+        span {{ $tr('Difference') }}
+        span {{ $tr('Bookings') }}
       div.fleet-daily-day(v-for="day in dailyDays" :key="day.date")
         div.fleet-daily-day-header
           span.fleet-daily-day-date {{ formatDailyDate(day.date) }}
-          span.fleet-daily-day-totals
-            | {{ $tr('Active session time') }}: {{ day.totals.active_seconds | friendlyduration }}
-            |  ·
-            | {{ $tr('Redmine booked time') }}: {{ day.totals.redmine_seconds | friendlyduration }}
-        b-table(
-          small
-          hover
-          responsive="lg"
-          :items="day.users"
-          :fields="dailyFields"
-          :empty-text="$tr('No users found')"
-        )
-          template(v-slot:cell(username)="data")
-            router-link(:to="'/fleet/users/' + encodeURIComponent(data.item.username)")
-              | {{ data.item.username }}
-          template(v-slot:cell(active_seconds)="data")
-            | {{ data.item.active_seconds | friendlyduration }}
-          template(v-slot:cell(redmine_seconds)="data")
-            span(v-if="data.item.redmine_seconds !== null")
-              | {{ data.item.redmine_seconds | friendlyduration }}
+          b-button.fleet-daily-day-reload(
+            size="sm"
+            variant="outline-secondary"
+            :disabled="Boolean(dailyReloadingDays[day.date])"
+            :title="$tr('Reload this day')"
+            @click="reloadDay(day)"
+          )
+            b-spinner(v-if="dailyReloadingDays[day.date]" small)
+            icon(v-else name="sync" scale="0.8")
+        div.fleet-daily-user-row(v-for="row in day.users" :key="day.date + '-' + row.username")
+          router-link.fleet-daily-cell-user(
+            :to="{ path: '/fleet/users/' + encodeURIComponent(row.username), query: { start: day.date, end: day.date } }"
+          ) {{ row.username }}
+          span.fleet-daily-cell {{ row.active_seconds | friendlyduration }}
+          span.fleet-daily-cell
+            template(v-if="row.redmine_seconds !== null") {{ row.redmine_seconds | friendlyduration }}
             span.text-muted(v-else :title="$tr('No Redmine user mapped')") -
-          template(v-slot:cell(delta_seconds)="data")
-            span(v-if="data.item.delta_seconds !== null")
-              | {{ formatSignedDuration(data.item.delta_seconds) }}
+          span.fleet-daily-cell
+            template(v-if="row.delta_seconds !== null") {{ formatSignedDuration(row.delta_seconds) }}
             span(v-else) -
-          template(v-slot:cell(entries)="data")
-            div.redmine-project-list(v-if="data.item.entries.length")
-              div.fleet-daily-entry(
-                v-for="(entry, index) in data.item.entries"
-                :key="index"
-              )
-                div.redmine-project-row
-                  span.redmine-project-name(:title="entry.project_name || `#${entry.project_id}`")
-                    | {{ entry.project_name || `#${entry.project_id}` }}
-                  span.redmine-project-time
-                    | {{ entry.seconds | friendlyduration }}
-                div.fleet-daily-entry-comment(v-if="entry.comments")
-                  | {{ entry.comments }}
-            span.text-muted(v-else-if="data.item.matched") {{ $tr('No bookings') }}
-            span.text-muted(v-else) {{ $tr('No Redmine user mapped') }}
+          div.fleet-daily-cell-entries
+            div.fleet-daily-entry(v-for="(entry, index) in row.entries" :key="index")
+              span.fleet-daily-entry-project(:title="entry.project_name || `#${entry.project_id}`")
+                | {{ entry.project_name || `#${entry.project_id}` }}
+              span.fleet-daily-entry-time {{ entry.seconds | friendlyduration }}
+              span.fleet-daily-entry-comment(v-if="entry.comments") {{ entry.comments }}
+            span.text-muted(v-if="row.entries.length === 0 && row.matched") {{ $tr('No bookings') }}
+            span.text-muted(v-else-if="row.entries.length === 0") {{ $tr('No Redmine user mapped') }}
 </template>
 
 <script lang="ts">
@@ -229,6 +221,7 @@ import 'vue-awesome/icons/arrow-left';
 import 'vue-awesome/icons/arrow-right';
 import 'vue-awesome/icons/sync';
 
+import { useAuthStore } from '~/stores/auth';
 import { useFleetStore } from '~/stores/fleet';
 import { useSettingsStore } from '~/stores/settings';
 import { orderFields, visibleFields } from '~/util/columnOrder';
@@ -243,6 +236,7 @@ export default {
   data() {
     return {
       fleetStore: useFleetStore(),
+      authStore: useAuthStore(),
       settingsStore: useSettingsStore(),
       startDate: moment().format('YYYY-MM-DD'),
       endDate: moment().format('YYYY-MM-DD'),
@@ -267,10 +261,24 @@ export default {
       dailyLoading: false,
       dailyError: '',
       dailyRequestId: 0,
+      dailyReloadingDays: {},
       tableKey: 'fleet-summary-users',
     };
   },
   computed: {
+    ownSummaryOnly() {
+      // Granted "Eigene Zusammenfassung" instead of the full one: the same
+      // page, restricted to this user. The server enforces the restriction
+      // regardless of what the client sends; this only shapes the UI.
+      if (this.authStore.isAdmin) {
+        return false;
+      }
+      const pages = this.authStore.allowedPages || [];
+      return pages.includes('fleet-summary-own') && !pages.includes('fleet-summary');
+    },
+    ownUsername() {
+      return String(this.authStore.username || '');
+    },
     summary() {
       return this.hasLoadedSummary ? this.fleetStore.summary : null;
     },
@@ -354,19 +362,6 @@ export default {
     dailyDays() {
       return this.dailyComparison?.days || [];
     },
-    dailyFields() {
-      return [
-        { key: 'username', label: this.$tr('Username'), sortable: true },
-        { key: 'active_seconds', label: this.$tr('Active session time'), sortable: true },
-        { key: 'redmine_seconds', label: this.$tr('Redmine booked time'), sortable: true },
-        { key: 'delta_seconds', label: this.$tr('Difference'), sortable: true },
-        {
-          key: 'entries',
-          label: this.$tr('Bookings'),
-          tdClass: 'fleet-summary-projects-cell',
-        },
-      ];
-    },
     canLoadSummary() {
       return (
         this.selectedUsernames.length > 0 &&
@@ -393,6 +388,14 @@ export default {
   },
   async mounted() {
     this.clearLoadedResults();
+    if (this.ownSummaryOnly) {
+      // /0/fleet/users needs the "fleet-users" grant, which this user does not
+      // have - and there is nothing to pick anyway.
+      this.allUserOptions = [{ username: this.ownUsername }];
+      this.selectedUsernames = [this.ownUsername];
+      this.selectionInitialized = true;
+      return;
+    }
     await this.loadUsers();
   },
   beforeDestroy() {
@@ -536,6 +539,7 @@ export default {
       this.dailyComparison = null;
       this.dailyLoading = false;
       this.dailyError = '';
+      this.dailyReloadingDays = {};
       this.fleetStore.$patch({
         summary: null,
         redmineComparison: null,
@@ -579,6 +583,9 @@ export default {
         }
         this.mergeUserOptions(summary?.users || []);
         this.hasLoadedSummary = true;
+        // Load Redmine automatically; a failure shows the warning alert but
+        // never breaks the Auswertung itself.
+        this.loadRedmineComparison();
       } catch (error) {
         if (requestId === this.summaryRequestId) {
           this.loadError = this.$tr('Unable to load fleet summary');
@@ -692,6 +699,40 @@ export default {
         if (requestId === this.dailyRequestId) {
           this.dailyLoading = false;
         }
+      }
+    },
+    async reloadDay(day) {
+      if (!day?.range?.start || !day?.range?.end) {
+        return;
+      }
+      this.$set(this.dailyReloadingDays, day.date, true);
+      try {
+        const response = await this.fleetStore.loadRedmineDailyComparison({
+          start: day.range.start,
+          end: day.range.end,
+          exclude_inactive_session_afk: 'true',
+          usernames: this.summaryRows.map(row => row.username),
+          force: true,
+        });
+        if (!this.dailyComparison) {
+          return;
+        }
+        const otherDays = (this.dailyComparison.days || []).filter(
+          existing => existing.date !== day.date
+        );
+        const refreshed = (response?.days || []).filter(fresh => fresh.date === day.date);
+        const days = [...otherDays, ...refreshed];
+        days.sort((left, right) => (left.date < right.date ? 1 : -1));
+        this.dailyComparison = { ...this.dailyComparison, days };
+        if (response?.error) {
+          this.dailyError = response.error;
+        }
+      } catch (error) {
+        const errorData = error?.response?.data || {};
+        this.dailyError =
+          errorData.error || errorData.message || this.$tr('Unable to load Redmine comparison');
+      } finally {
+        this.$set(this.dailyReloadingDays, day.date, false);
       }
     },
     formatDailyDate(date) {
@@ -821,20 +862,86 @@ export default {
   font-weight: 600;
 }
 
-.fleet-daily-day-totals {
+.fleet-daily-grid-header,
+.fleet-daily-user-row {
+  display: grid;
+  grid-template-columns: minmax(6rem, 9rem) 7.5rem 7.5rem 6.5rem minmax(0, 1fr);
+  gap: 0.4rem 0.9rem;
+  align-items: start;
+}
+
+.fleet-daily-grid-header {
+  margin-top: 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+  font-size: 0.78rem;
+  font-weight: 600;
   color: var(--gray);
-  font-size: 0.85rem;
+}
+
+.fleet-daily-user-row {
+  padding: 0.25rem 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.fleet-daily-user-row + .fleet-daily-user-row {
+  border-top: 1px dashed rgba(128, 128, 128, 0.18);
+}
+
+.fleet-daily-cell-user {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.fleet-daily-cell {
+  white-space: nowrap;
+}
+
+.fleet-daily-cell-entries {
+  min-width: 0;
+}
+
+.fleet-daily-day-reload {
+  margin-left: auto;
+  padding: 0.1rem 0.45rem;
 }
 
 .fleet-daily-entry {
-  margin-bottom: 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem;
   min-width: 0;
+}
+
+.fleet-daily-entry-project {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.fleet-daily-entry-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .fleet-daily-entry-comment {
   color: var(--gray);
   font-size: 0.8rem;
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 767.98px) {
+  .fleet-daily-grid-header {
+    display: none;
+  }
+
+  .fleet-daily-user-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .fleet-daily-cell-entries {
+    grid-column: 1 / -1;
+  }
 }
 
 .redmine-match-reason {

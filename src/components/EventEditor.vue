@@ -116,9 +116,11 @@ b-modal(v-if="event && event.id", :id="'edit-modal-' + event.id", ref="eventEdit
     hr
 
     div.float-left
-      b-button.mx-1(@click="delete_(); close();" variant="danger")
+      b-button.mx-1(@click="confirmDelete" variant="danger")
         icon.mx-1(name="trash")
-        | Delete
+        | {{ $tr('Delete') }}
+      b-button.mx-1(v-if="isTrashedEvent" @click="restore" variant="success")
+        | {{ $tr('Restore') }}
     div.float-right
       b-button.mx-1(@click="close")
         icon.mx-1(name="times")
@@ -208,6 +210,9 @@ export default {
     };
   },
   computed: {
+    isTrashedEvent() {
+      return Boolean(this.editedEvent?.data?.$deleted);
+    },
     editableDataKeys() {
       // Keys starting with $ are internal/audit metadata ($manual, $edits,
       // $category, ...) and are not edited by hand.
@@ -399,11 +404,44 @@ export default {
       this.$emit('save', this.editedEvent);
       await this.$aw.replaceEvent(this.bucket_id, this.editedEvent);
     },
+    async confirmDelete() {
+      const confirmed = await this.$bvModal.msgBoxConfirm(
+        this.$tr('Delete this event? It is moved to the trash bucket and can be restored from there.'),
+        {
+          title: this.$tr('Delete event'),
+          okVariant: 'danger',
+          okTitle: this.$tr('Delete'),
+          cancelTitle: this.$tr('Cancel'),
+          centered: true,
+        }
+      );
+      if (!confirmed) {
+        return;
+      }
+      await this.delete_();
+      this.close();
+    },
     async delete_() {
       // This emit needs to be called first, otherwise it won't occur for some reason
       // FIXME: but what if the replace fails? Then UI will incorrectly think event was deleted?
       this.$emit('delete', this.event);
       await this.$aw.deleteEvent(this.bucket_id, this.event.id);
+    },
+    async restore() {
+      try {
+        await this.$aw.req.post(
+          '/0/buckets/' +
+            encodeURIComponent(this.bucket_id) +
+            '/events/' +
+            encodeURIComponent(this.event.id) +
+            '/restore'
+        );
+        // Treat like a removal from THIS (trash) bucket so the timeline refreshes.
+        this.$emit('delete', this.event);
+        this.close();
+      } catch (error) {
+        console.error('Unable to restore event:', error);
+      }
     },
     async getEvent() {
       if (this.bucket_id && this.event && this.event.id) {

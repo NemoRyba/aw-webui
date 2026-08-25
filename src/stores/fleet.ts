@@ -50,6 +50,11 @@ interface State {
   deviceMetrics: IFleetDeviceMetricsResponse | null;
   userDetails: Record<string, IFleetUserDetail>;
   deviceDetails: Record<string, IFleetDeviceDetail>;
+  watcherUpdate: any;
+  watcherUpdateConfig: any;
+  fleetAuth: any;
+  deviceEnrollment: any;
+  fleetEndpoint: any;
 }
 
 export const useFleetStore = defineStore('fleet', {
@@ -66,6 +71,11 @@ export const useFleetStore = defineStore('fleet', {
     deviceMetrics: null,
     userDetails: {},
     deviceDetails: {},
+    watcherUpdate: null,
+    watcherUpdateConfig: null,
+    fleetAuth: null,
+    deviceEnrollment: null,
+    fleetEndpoint: null,
   }),
 
   actions: {
@@ -204,17 +214,137 @@ export const useFleetStore = defineStore('fleet', {
       return mappings;
     },
 
+    async loadWatcherUpdateDevices(): Promise<any> {
+      const response = await getClient().req.get('/0/fleet/watcher-update/devices');
+      this.$patch({ watcherUpdate: response.data });
+      return response.data;
+    },
+
+    async loadWatcherUpdateConfig(): Promise<any> {
+      const response = await getClient().req.get('/0/fleet/watcher-update/config');
+      this.$patch({ watcherUpdateConfig: response.data });
+      return response.data;
+    },
+
+    async saveWatcherUpdateConfig(config = {}): Promise<any> {
+      const response = await getClient().req.post('/0/fleet/watcher-update/config', config);
+      this.$patch({ watcherUpdateConfig: response.data });
+      return response.data;
+    },
+
+    async uploadWatcherUpdatePackage(file: File, onProgress?: (pct: number) => void): Promise<any> {
+      const form = new FormData();
+      form.append('file', file, file.name);
+      const response = await getClient().req.post('/0/fleet/watcher-update/upload', form, {
+        timeout: 600000,
+        onUploadProgress: event => {
+          if (onProgress && event.total) {
+            onProgress(Math.round((event.loaded / event.total) * 100));
+          }
+        },
+      });
+      return response.data;
+    },
+
+    async deleteWatcherUpdatePackage(): Promise<any> {
+      const response = await getClient().req.delete('/0/fleet/watcher-update/upload');
+      return response.data;
+    },
+
+    // Manual "update now": queues a pending request per device that its
+    // supervisor picks up on the next poll (<= 60 s).
+    async requestWatcherUpdate(hostnames: string[]): Promise<any> {
+      const response = await getClient().req.post('/0/fleet/watcher-update/request', {
+        hostnames,
+      });
+      return response.data;
+    },
+
+    async cancelWatcherUpdate(hostnames: string[]): Promise<any> {
+      const response = await getClient().req.delete('/0/fleet/watcher-update/request', {
+        data: { hostnames },
+      });
+      return response.data;
+    },
+
+    async loadFleetAuthConfig(): Promise<any> {
+      const response = await getClient().req.get('/0/admin/fleet-auth');
+      this.$patch({ fleetAuth: response.data });
+      return response.data;
+    },
+
+    async saveFleetAuthConfig(config = {}): Promise<any> {
+      const response = await getClient().req.post('/0/admin/fleet-auth', config);
+      this.$patch({ fleetAuth: response.data });
+      return response.data;
+    },
+
+    async revealFleetToken(): Promise<string> {
+      const response = await getClient().req.get('/0/admin/fleet-auth/token');
+      return response.data?.token || '';
+    },
+
+    // Device enrollment: devices register themselves, an admin approves.
+    async loadDeviceEnrollment(): Promise<any> {
+      const response = await getClient().req.get('/0/fleet/devices/enrollment');
+      this.$patch({ deviceEnrollment: response.data });
+      return response.data;
+    },
+
+    async setDeviceEnrollment(deviceIds: string[], newStatus: string): Promise<any> {
+      const response = await getClient().req.post('/0/fleet/devices/enrollment', {
+        device_ids: deviceIds,
+        status: newStatus,
+      });
+      return response.data;
+    },
+
+    async deleteEnrolledDevices(deviceIds: string[]): Promise<any> {
+      const response = await getClient().req.delete('/0/fleet/devices/enrollment', {
+        data: { device_ids: deviceIds },
+      });
+      return response.data;
+    },
+
+    // Moving the fleet server to another machine / IP.
+    async loadFleetEndpoint(): Promise<any> {
+      const response = await getClient().req.get('/0/admin/fleet-endpoint');
+      this.$patch({ fleetEndpoint: response.data });
+      return response.data;
+    },
+
+    async saveFleetEndpoint(payload = {}): Promise<any> {
+      const response = await getClient().req.post('/0/admin/fleet-endpoint', payload);
+      this.$patch({ fleetEndpoint: response.data?.config || null });
+      return response.data;
+    },
+
     async loadUser(username: string, params = {}): Promise<IFleetUserDetail> {
+      // Monotonic sequence: when several loads overlap (e.g. rapid "Next day"
+      // clicks), only the most recently started one may write the store, so a
+      // slow stale response can never overwrite newer data.
+      const seq = ((this as any)._userLoadSeq = ((this as any)._userLoadSeq || 0) + 1);
       const response = await getClient().req.get(`/0/fleet/users/${encodeURIComponent(username)}`, {
         params,
         // First-time computation of a long range can exceed the global request
         // timeout; cached ranges return instantly. Allow up to 10 minutes here.
         timeout: 600000,
       });
+      if (seq !== (this as any)._userLoadSeq) {
+        return response.data;
+      }
       this.userDetails = {
         ...this.userDetails,
         [username]: response.data,
       };
+      return response.data;
+    },
+
+    async loadUserSummaryProgress(username: string, params = {}): Promise<any> {
+      const response = await getClient().req.get(
+        `/0/fleet/users/${encodeURIComponent(username)}/summary/progress`,
+        { params, timeout: 15000 }
+      );
       return response.data;
     },
 

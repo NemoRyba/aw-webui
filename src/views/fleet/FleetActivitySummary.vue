@@ -227,6 +227,8 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
           :device-ids="selectedSystemMetricDeviceIds"
           :start="rangeStartIso"
           :end="rangeEndIso"
+          :window-start="dailyTimelineVisibleWindow && dailyTimelineVisibleWindow[0]"
+          :window-end="dailyTimelineVisibleWindow && dailyTimelineVisibleWindow[1]"
           :max-points="540"
           :default-visible="true"
           :show-toggle="false"
@@ -241,6 +243,8 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
           :windowInterval="dailyTimelineInterval"
           :swimlane="dailyTimelineSwimlane"
           :updateTimelineWindow="true"
+          @window-changed="onDailyTimelineWindowChanged"
+          @events-changed="refreshPanel('dailyTimeline')"
         )
         div.fleet-summary-empty(v-else) {{ $tr('No data') }}
 
@@ -693,6 +697,7 @@ export default {
       activeWindowEvents: [],
       rawTimelineBuckets: [],
       selectedDailyWatcherKeys: [],
+      dailyTimelineVisibleWindow: null,
       dailyTimelineSwimlane: null,
       timelineChartArea: null,
       timelineTooltip: {
@@ -1545,7 +1550,9 @@ export default {
           sortDeviceName: identity.deviceName,
           sortSessionId: identity.sessionId,
           sortWatcherLabel: identity.watcherLabel,
-          defaultSelected: true,
+          // Default: only the window watcher; every other watcher starts
+          // disabled and can be enabled by hand.
+          defaultSelected: String(bucket.type || '') === 'currentwindow',
         };
       });
       const systemMetricOptions = this.systemMetricDevices.map(device => ({
@@ -2908,6 +2915,9 @@ export default {
     clearDailyWatchers() {
       this.selectedDailyWatcherKeys = [];
     },
+    onDailyTimelineWindowChanged(interval) {
+      this.dailyTimelineVisibleWindow = interval;
+    },
     syncDailyTimelineWatchers() {
       const availableOptions = this.dailyWatcherOptions;
       const available = availableOptions.map(option => option.value);
@@ -4065,12 +4075,25 @@ export default {
         return;
       }
 
-      if (this.isTimelineAxisClick(chart, event)) {
+      // Clicking a time column (not exactly on a bar) shows the same combined
+      // bin details the hover tooltip shows — clicks and hovers now agree.
+      if (this.isTimelineAxisClick(chart, event) || this.isTimelineChartAreaClick(chart, event)) {
         const index = this.timelineIndexFromPixel(chart, Number(event.x));
         if (index >= 0 && this.timelineActiveElementsForIndex(chart, index).length > 0) {
           this.openTimelineAxisDetailWindow(chart, event, index);
         }
       }
+    },
+    isTimelineChartAreaClick(chart, event) {
+      const chartArea = chart?.chartArea;
+      if (!chartArea) {
+        return false;
+      }
+      const x = Number(event.x);
+      const y = Number(event.y);
+      return (
+        x >= chartArea.left && x <= chartArea.right && y >= chartArea.top && y <= chartArea.bottom
+      );
     },
     timelineClickedBarElements(chart, event) {
       if (!chart?.getElementsAtEventForMode || !event?.native) {

@@ -67,7 +67,7 @@ import moment from 'moment';
 
 import { useFleetStore } from '~/stores/fleet';
 import { useSettingsStore } from '~/stores/settings';
-import { orderFields } from '~/util/columnOrder';
+import { applyColumnPreferences } from '~/util/columnOrder';
 import { detectPreferredTheme } from '~/util/theme';
 
 export default {
@@ -103,7 +103,7 @@ export default {
       ];
     },
     fields() {
-      return orderFields(this.defaultFields, this.settingsStore.columnOrdersData?.[this.tableKey]);
+      return applyColumnPreferences(this.defaultFields, this.settingsStore, this.tableKey);
     },
     devices() {
       return this.fleetStore.devices;

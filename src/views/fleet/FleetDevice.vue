@@ -11,6 +11,23 @@ div
       | {{ $tr('Refresh') }}
 
   b-card.mb-3
+    div.fleet-device-range-shortcuts.mb-2
+      b-button-group(size="sm")
+        b-button(
+          variant="outline-secondary"
+          :title="$tr('Previous day')"
+          @click="shiftRangeDays(-1)"
+        )
+          icon(name="arrow-left")
+          span.ml-1 {{ $tr('Previous day') }}
+        b-button(
+          variant="outline-secondary"
+          :title="$tr('Next day')"
+          :disabled="!canShiftNextDay"
+          @click="shiftRangeDays(1)"
+        )
+          span.mr-1 {{ $tr('Next day') }}
+          icon(name="arrow-right")
     div.row
       div.col-md-4
         label.small.text-muted(for="fleet-device-start") {{ $tr('Start') }}
@@ -34,24 +51,6 @@ div
       :default-visible="true"
       :show-toggle="false"
     )
-
-  div.row(v-if="device")
-    div.col-md-3.mb-3
-      b-card
-        div.text-muted.small {{ $tr('Active') }}
-        h4.mb-0 {{ device.totals.active_seconds | friendlyduration }}
-    div.col-md-3.mb-3
-      b-card
-        div.text-muted.small {{ $tr('AFK') }}
-        h4.mb-0 {{ device.totals.afk_seconds | friendlyduration }}
-    div.col-md-3.mb-3
-      b-card
-        div.text-muted.small {{ $tr('Locked') }}
-        h4.mb-0 {{ device.totals.locked_seconds | friendlyduration }}
-    div.col-md-3.mb-3
-      b-card
-        div.text-muted.small {{ $tr('Disconnected') }}
-        h4.mb-0 {{ device.totals.disconnected_seconds | friendlyduration }}
 
   b-card.mb-3(v-if="device")
     div.d-flex.align-items-center.mb-3
@@ -103,10 +102,12 @@ div
 
 <script lang="ts">
 import moment from 'moment';
+import 'vue-awesome/icons/arrow-left';
+import 'vue-awesome/icons/arrow-right';
 
 import { useFleetStore } from '~/stores/fleet';
 import { useSettingsStore } from '~/stores/settings';
-import { orderFields } from '~/util/columnOrder';
+import { applyColumnPreferences } from '~/util/columnOrder';
 
 export default {
   name: 'FleetDevice',
@@ -141,10 +142,7 @@ export default {
       ];
     },
     appFields() {
-      return orderFields(
-        this.defaultAppFields,
-        this.settingsStore.columnOrdersData?.[this.tableKeys.apps]
-      );
+      return applyColumnPreferences(this.defaultAppFields, this.settingsStore, this.tableKeys.apps);
     },
     defaultSessionFields() {
       return [
@@ -156,10 +154,7 @@ export default {
       ];
     },
     sessionFields() {
-      return orderFields(
-        this.defaultSessionFields,
-        this.settingsStore.columnOrdersData?.[this.tableKeys.sessions]
-      );
+      return applyColumnPreferences(this.defaultSessionFields, this.settingsStore, this.tableKeys.sessions);
     },
     device() {
       return this.fleetStore.deviceDetails[this.device_id] || null;
@@ -169,6 +164,13 @@ export default {
     },
     rangeEnd() {
       return moment(this.endDate).endOf('day').format();
+    },
+    canShiftNextDay() {
+      const end = moment(this.endDate, 'YYYY-MM-DD', true);
+      if (!end.isValid()) {
+        return false;
+      }
+      return end.isBefore(moment().startOf('day'), 'day');
     },
   },
   watch: {
@@ -187,6 +189,20 @@ export default {
         exclude_inactive_session_afk: 'true',
       };
     },
+    async shiftRangeDays(days) {
+      const start = moment(this.startDate);
+      const end = moment(this.endDate);
+      if (!start.isValid() || !end.isValid()) {
+        return;
+      }
+      if (days > 0 && !this.canShiftNextDay) {
+        return;
+      }
+
+      this.startDate = start.add(days, 'days').format('YYYY-MM-DD');
+      this.endDate = end.add(days, 'days').format('YYYY-MM-DD');
+      await this.refresh();
+    },
     async refresh() {
       await this.fleetStore.loadDevice(this.device_id, this.buildParams());
     },
@@ -204,3 +220,11 @@ export default {
   },
 };
 </script>
+
+
+<style scoped lang="scss">
+.fleet-device-range-shortcuts {
+  display: flex;
+  justify-content: flex-start;
+}
+</style>

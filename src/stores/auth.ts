@@ -8,6 +8,8 @@ interface IAuthUser {
   username: string;
   is_admin: boolean;
   source?: string;
+  allowed_pages?: string[];
+  landing_page?: string;
 }
 
 interface State {
@@ -25,6 +27,10 @@ function normalizeAuthPayload(payload: any) {
           username: String(payload.user.username),
           is_admin: Boolean(payload.user.is_admin),
           source: String(payload.user.source || 'local'),
+          allowed_pages: Array.isArray(payload.user.allowed_pages)
+            ? payload.user.allowed_pages.map(String)
+            : [],
+          landing_page: String(payload.user.landing_page || ''),
         }
       : null,
     loaded: true,
@@ -44,6 +50,12 @@ export const useAuthStore = defineStore('auth', {
     },
     username(state: State) {
       return state.user?.username || '';
+    },
+    allowedPages(state: State): string[] {
+      return state.user?.allowed_pages || [];
+    },
+    landingPageOverride(state: State) {
+      return state.user?.landing_page || '';
     },
   },
 

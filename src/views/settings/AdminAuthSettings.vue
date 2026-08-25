@@ -93,41 +93,6 @@ div.admin-auth-settings
       p.text-muted.small.mt-3
         | {{ $tr('If no test credentials are provided, only the service bind is tested.') }}
 
-      hr
-
-      h6.mb-3 {{ $tr('Application admins') }}
-      p.text-muted.small
-        | {{ $tr('LDAP users appear here after their first successful login. They are non-admin until the built-in admin promotes them.') }}
-      b-button.mb-2(
-        variant="outline-secondary"
-        size="sm"
-        @click="loadAuthUsers"
-        :disabled="usersLoading"
-      )
-        | {{ $tr('Refresh users') }}
-      b-table(
-        small
-        hover
-        responsive="sm"
-        :items="authUsers"
-        :fields="authUserFields"
-        :busy="usersLoading"
-        :empty-text="$tr('No users found')"
-      )
-        template(v-slot:cell(display_name)="data")
-          div {{ data.item.display_name || '-' }}
-          small.text-muted(v-if="data.item.email") {{ data.item.email }}
-        template(v-slot:cell(source)="data")
-          b-badge(:variant="data.item.source === 'ldap' ? 'info' : 'secondary'")
-            | {{ data.item.source }}
-        template(v-slot:cell(is_admin)="data")
-          b-form-checkbox(
-            :checked="data.item.is_admin"
-            switch
-            :disabled="data.item.username === 'admin' || savingUser === data.item.username"
-            @change="setUserAdmin(data.item, $event)"
-          )
-            | {{ data.item.is_admin ? $tr('Admin') : $tr('User') }}
 </template>
 
 <script lang="ts">
@@ -155,26 +120,12 @@ export default {
       bindPasswordInput: '',
       testUsername: '',
       testPassword: '',
-      authUsers: [],
       loading: false,
       saving: false,
       testing: false,
-      usersLoading: false,
-      savingUser: '',
       error: '',
       success: '',
     };
-  },
-  computed: {
-    authUserFields() {
-      return [
-        { key: 'username', label: this.$tr('Username'), sortable: true },
-        { key: 'display_name', label: this.$tr('Display name') },
-        { key: 'source', label: this.$tr('Source'), sortable: true },
-        { key: 'is_admin', label: this.$tr('Admin') },
-        { key: 'last_login', label: this.$tr('Last login'), sortable: true },
-      ];
-    },
   },
   async mounted() {
     await this.load();
@@ -200,29 +151,13 @@ export default {
       this.loading = true;
       this.error = '';
       try {
-        const [ldapResponse, usersResponse] = await Promise.all([
-          getClient().req.get('/0/admin/auth/ldap'),
-          getClient().req.get('/0/admin/auth/users'),
-        ]);
+        const ldapResponse = await getClient().req.get('/0/admin/auth/ldap');
         this.applyLdapConfig(ldapResponse.data);
-        this.authUsers = usersResponse.data?.users || [];
       } catch (e) {
         this.error =
           e?.response?.data?.message || this.$tr('Unable to load authentication settings');
       } finally {
         this.loading = false;
-      }
-    },
-    async loadAuthUsers() {
-      this.usersLoading = true;
-      this.error = '';
-      try {
-        const response = await getClient().req.get('/0/admin/auth/users');
-        this.authUsers = response.data?.users || [];
-      } catch (e) {
-        this.error = e?.response?.data?.message || this.$tr('Unable to load users');
-      } finally {
-        this.usersLoading = false;
       }
     },
     async saveLdapSettings() {
@@ -268,27 +203,6 @@ export default {
         this.testing = false;
       }
     },
-    async setUserAdmin(user, isAdmin) {
-      this.savingUser = user.username;
-      this.error = '';
-      this.success = '';
-      try {
-        const response = await getClient().req.post(
-          `/0/admin/auth/users/${encodeURIComponent(user.username)}`,
-          { is_admin: Boolean(isAdmin) },
-          { headers: { 'Content-Type': 'application/json' } }
-        );
-        const updated = response.data;
-        this.authUsers = this.authUsers.map(item =>
-          item.username === updated.username ? { ...item, ...updated } : item
-        );
-      } catch (e) {
-        this.error = e?.response?.data?.message || this.$tr('Unable to update user');
-        await this.loadAuthUsers();
-      } finally {
-        this.savingUser = '';
-      }
-    },
   },
 };
 </script>
@@ -314,4 +228,5 @@ export default {
     grid-template-columns: 1fr;
   }
 }
+
 </style>

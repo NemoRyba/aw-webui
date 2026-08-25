@@ -20,25 +20,13 @@ div
 
   hr(v-if="showAdminAuthSettings")
 
-  RedmineUserMappingSettings(v-if="showAdminAuthSettings")
-
-  hr(v-if="showAdminAuthSettings")
-
   TimelineDurationSettings
-
-  hr
-
-  LandingPageSettings
 
   hr
 
   Theme
 
   hr
-
-  div(v-if="!$isAndroid")
-    ReleaseNotificationSettings
-    hr
 
   ColorSettings
 
@@ -63,11 +51,8 @@ import AdminAuthSettings from '~/views/settings/AdminAuthSettings.vue';
 import DaystartSettings from '~/views/settings/DaystartSettings.vue';
 import FleetSummaryPrecomputeSettings from '~/views/settings/FleetSummaryPrecomputeSettings.vue';
 import RedmineSettings from '~/views/settings/RedmineSettings.vue';
-import RedmineUserMappingSettings from '~/views/settings/RedmineUserMappingSettings.vue';
 import TimelineDurationSettings from '~/views/settings/TimelineDurationSettings.vue';
-import ReleaseNotificationSettings from '~/views/settings/ReleaseNotificationSettings.vue';
 import CategorizationSettings from '~/views/settings/CategorizationSettings.vue';
-import LandingPageSettings from '~/views/settings/LandingPageSettings.vue';
 import DeveloperSettings from '~/views/settings/DeveloperSettings.vue';
 import Theme from '~/views/settings/Theme.vue';
 import ColorSettings from '~/views/settings/ColorSettings.vue';
@@ -79,12 +64,9 @@ export default {
     DaystartSettings,
     FleetSummaryPrecomputeSettings,
     RedmineSettings,
-    RedmineUserMappingSettings,
     AdminAuthSettings,
     TimelineDurationSettings,
-    ReleaseNotificationSettings,
     CategorizationSettings,
-    LandingPageSettings,
     Theme,
     ColorSettings,
     DeveloperSettings,

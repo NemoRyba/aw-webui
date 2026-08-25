@@ -27,3 +27,22 @@ export function visibleFields<T extends IColumnField>(fields: T[], hidden?: stri
   const hiddenKeys = new Set(hidden);
   return fields.filter(field => field.hideable === false || !hiddenKeys.has(field.key));
 }
+
+export interface IColumnSettingsLike {
+  columnOrdersData?: Record<string, string[]>;
+  columnVisibilityData?: Record<string, string[]>;
+}
+
+export function applyColumnPreferences<T extends IColumnField>(
+  fields: T[],
+  settings: IColumnSettingsLike,
+  tableKey: string,
+  defaultHidden: string[] = []
+): T[] {
+  const ordered = orderFields(fields, settings?.columnOrdersData?.[tableKey]);
+  const visibility = settings?.columnVisibilityData || {};
+  const hidden = Object.prototype.hasOwnProperty.call(visibility, tableKey)
+    ? visibility[tableKey]
+    : defaultHidden;
+  return visibleFields(ordered, hidden);
+}

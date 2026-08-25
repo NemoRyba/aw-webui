@@ -31,6 +31,8 @@
       EventEditor(
         :event="editingEvent"
         :bucket_id="editingEventBucket"
+        @save="onEditorMutated"
+        @delete="onEditorDeleted"
         @hidden="onEditorHidden"
       )
 </template>
@@ -167,6 +169,7 @@ interface ITimelineItem {
   bucketId?: string;
   event?: IEvent | null;
   editable?: boolean;
+  awEditable?: boolean;
   colorTarget?: Record<string, any> | null;
 }
 export default {
@@ -192,6 +195,10 @@ export default {
       items: [],
       groups: [],
       options: {
+        // Never let vis-timeline offer its own manipulation UI (the red
+        // delete cross on hover/selection) — deletion must only happen
+        // through the EventEditor with its confirmation + trash bucket.
+        editable: false,
         zoomMin: 1000 * 60, // 10min in milliseconds
         zoomMax: 1000 * 60 * 60 * 24 * 31 * 3, // about three months in milliseconds
         stack: false,
@@ -314,6 +321,11 @@ export default {
       this.timeline.on('doubleClick', properties => {
         this.onDoubleClick(properties);
       });
+      this.timeline.on('rangechanged', properties => {
+        // Emitted for user pan/zoom AND programmatic setWindow, so parents can
+        // keep companion charts (e.g. the system load wave) on the same axis.
+        this.$emit('window-changed', [moment(properties.start), moment(properties.end)]);
+      });
       this.timeline.on('select', properties => {
         if (properties.items.length === 1) {
           this.setDetailFromItemId(properties.items[0]);
@@ -370,6 +382,32 @@ export default {
         }
         window.setTimeout(restore, 50);
       });
+    },
+    onEditorMutated() {
+      // Saved edits change durations/labels — ask the parent to reload events.
+      this.$emit('events-changed');
+    },
+    onEditorDeleted(event) {
+      // Remove the item locally right away so a stale bar cannot be clicked
+      // again while the parent reloads.
+      const bucketId = this.editingEventBucket;
+      const eventId = event?.id;
+      if (bucketId && eventId !== undefined && eventId !== null) {
+        this.items = this.items.filter(
+          item =>
+            !(
+              item.bucketId === bucketId &&
+              item.event &&
+              String(item.event.id) === String(eventId)
+            )
+        );
+        if (this.timeline) {
+          this.timeline.setData({ groups: this.groups, items: this.items });
+        }
+        this.detailItemId = null;
+        this.detailHtml = '';
+      }
+      this.$emit('events-changed');
     },
     onEditorHidden() {
       const scrollPosition = this.editorScrollPosition;
@@ -517,7 +555,7 @@ export default {
         return;
       } else if (properties.items.length == 1) {
         const item = _.find(this.items, i => String(i.id) === String(properties.items[0]));
-        if (!item || !item.editable || !item.event || !item.bucketId) {
+        if (!item || !item.awEditable || !item.event || !item.bucketId) {
           return;
         }
 
@@ -527,7 +565,28 @@ export default {
 
         // We retrieve the full event to ensure if's not cut-off by the query range
         // See: https://github.com/ActivityWatch/aw-webui/pull/320#issuecomment-1056921587
-        this.editingEvent = await this.$aw.getEvent(bucketId, event.id);
+        try {
+          this.editingEvent = await this.$aw.getEvent(bucketId, event.id);
+        } catch (error) {
+          // The event no longer exists (e.g. it was just deleted) — drop the
+          // stale item and ask the parent to reload instead of surfacing
+          // repeated request errors.
+          console.warn('Timeline event no longer exists, refreshing:', bucketId, event.id);
+          this.items = this.items.filter(
+            item =>
+              !(
+                item.bucketId === bucketId &&
+                item.event &&
+                String(item.event.id) === String(event.id)
+              )
+          );
+          if (this.timeline) {
+            this.timeline.setData({ groups: this.groups, items: this.items });
+          }
+          this.editorScrollPosition = null;
+          this.$emit('events-changed');
+          return;
+        }
         this.editingEventBucket = bucketId;
 
         this.$nextTick(() => {
@@ -595,7 +654,8 @@ export default {
           detailHtml: item.tooltip,
           bucketId: item.bucketId,
           event: item.event,
-          editable: this.canEditEvents && !item.event?.data?.$synthetic,
+          editable: false,
+          awEditable: this.canEditEvents && !item.event?.data?.$synthetic,
           colorTarget: item.colorTarget,
         };
       });

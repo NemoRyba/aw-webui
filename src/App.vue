@@ -7,7 +7,6 @@ div#wrapper(v-if="loaded")
       div.aw-container.my-sm-3.p-3
         error-boundary
           user-satisfaction-poll
-          new-release-notification(v-if="isNewReleaseCheckEnabled")
           router-view
 
     aw-footer
@@ -31,7 +30,6 @@ export default {
   data: function () {
     return {
       activityViews: [],
-      isNewReleaseCheckEnabled: !process.env.VUE_APP_ON_ANDROID,
       loaded: false,
     };
   },

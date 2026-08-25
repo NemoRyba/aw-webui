@@ -44,6 +44,12 @@ div.aw-categorytree(:class="{'aw-categorytree--horizontal': horizontal}")
         icon(name="circle", scale="0.4")
       span.aw-categorytree-label {{cat.subname}}
       span.aw-categorytree-duration {{format_category_value(cat)}}
+  div.aw-categorytree-detail(v-if="selectedDetail")
+    div.aw-categorytree-detail-header
+      strong {{ selectedDetail.title }}
+      button.aw-categorytree-detail-close(type="button" @click="selectedDetail = null") ×
+    div.aw-categorytree-detail-line(v-for="(line, index) in selectedDetail.lines" :key="index")
+      | {{ line }}
   hr
   // TODO: Make configurable in a cleaner way (figure out a way to configure visualizations generally)
   b-checkbox(v-model="show_perc" size="sm") {{ $tr('Show percent') }}
@@ -126,6 +132,46 @@ div.aw-categorytree(:class="{'aw-categorytree--horizontal': horizontal}")
   margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
+
+.aw-categorytree-row--selected {
+  background: rgba(127, 127, 127, 0.16);
+  border-radius: 0.25rem;
+}
+
+.aw-categorytree-detail {
+  margin-top: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  border-radius: 0.4rem;
+  background: rgba(127, 127, 127, 0.08);
+}
+
+.aw-categorytree-detail-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.aw-categorytree-detail-close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.aw-categorytree-detail-close:hover {
+  opacity: 1;
+}
+
+.aw-categorytree-detail-line {
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+}
 </style>
 
 <script lang="ts">
@@ -190,6 +236,7 @@ export default {
     return {
       expanded: new Set(),
       show_perc: false,
+      selectedDetail: null,
       categoryStore: useCategoryStore(),
       autoExpandedSignature: '',
       userToggled: false,
@@ -321,7 +368,19 @@ export default {
         this.$emit('categorize-app', cat);
         return;
       }
+      // Expand/collapse keeps working exactly as before ...
       this.toggle(cat);
+      // ... and the click additionally shows the same details as hovering.
+      if (this.selectedDetail && this.selectedDetail.key === cat.name_pretty) {
+        this.selectedDetail = null;
+        return;
+      }
+      const lines = this.category_tooltip_lines(cat);
+      this.selectedDetail = {
+        key: cat.name_pretty,
+        title: `${cat.subname} — ${seconds_to_duration(cat.duration)}`,
+        lines: lines.slice(2).filter(line => line !== ''),
+      };
     },
     is_uncategorized_app_action: function (cat) {
       return (
@@ -332,6 +391,8 @@ export default {
     },
     row_class: function (cat) {
       return {
+        'aw-categorytree-row--selected':
+          this.selectedDetail && this.selectedDetail.key === cat?.name_pretty,
         clickable: this.has_children(cat),
         'aw-categorytree-row--app': cat?.is_app_detail,
         'aw-categorytree-row--actionable': this.is_uncategorized_app_action(cat),
@@ -388,8 +449,11 @@ export default {
       return (cat?.children || []).length > 0;
     },
     category_tooltip: function (cat) {
+      return this.category_tooltip_lines(cat).join('\n');
+    },
+    category_tooltip_lines: function (cat) {
       if (!cat) {
-        return '';
+        return [];
       }
 
       const lines = [cat.subname, seconds_to_duration(cat.duration)];
@@ -404,7 +468,7 @@ export default {
         lines.push('');
         lines.push(this.$tr('Click to categorize matching app'));
       }
-      return lines.join('\n');
+      return lines;
     },
     format_category_value: function (cat) {
       if (this.show_perc) {

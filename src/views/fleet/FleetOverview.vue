@@ -102,7 +102,7 @@ div
           | {{ data.item.device_name || data.item.device_id }}
       template(v-slot:cell(status)="data")
         b-badge(:variant="stateVariant(data.item.status)")
-          | {{ $tr(data.item.status) }}
+          | {{ deviceStatusLabel(data.item.status) }}
       template(v-slot:cell(users_logged_in)="data")
         | {{ data.item.users_logged_in.length ? data.item.users_logged_in.join(', ') : '—' }}
       template(v-slot:cell(last_updated)="data")
@@ -113,7 +113,7 @@ div
 <script lang="ts">
 import { useFleetStore } from '~/stores/fleet';
 import { useSettingsStore } from '~/stores/settings';
-import { orderFields } from '~/util/columnOrder';
+import { applyColumnPreferences } from '~/util/columnOrder';
 
 export default {
   name: 'FleetOverview',
@@ -168,10 +168,7 @@ export default {
       ];
     },
     userFields() {
-      return orderFields(
-        this.defaultUserFields,
-        this.settingsStore.columnOrdersData?.[this.tableKeys.liveUsers]
-      );
+      return applyColumnPreferences(this.defaultUserFields, this.settingsStore, this.tableKeys.liveUsers);
     },
     defaultDeviceFields() {
       return [
@@ -182,10 +179,7 @@ export default {
       ];
     },
     deviceFields() {
-      return orderFields(
-        this.defaultDeviceFields,
-        this.settingsStore.columnOrdersData?.[this.tableKeys.devices]
-      );
+      return applyColumnPreferences(this.defaultDeviceFields, this.settingsStore, this.tableKeys.devices);
     },
     liveUsers() {
       return this.live ? this.live.users : [];
@@ -236,6 +230,16 @@ export default {
         unitIndex += 1;
       }
       return `${size >= 10 ? size.toFixed(1) : size.toFixed(2)} ${units[unitIndex]}`;
+    },
+    deviceStatusLabel(status) {
+      // Distinguish the device row status from the user status shown above it.
+      if (status === 'online') {
+        return this.$tr('Device online');
+      }
+      if (status === 'stale') {
+        return this.$tr('Device offline');
+      }
+      return `${this.$tr('Device')} ${this.$tr(status)}`;
     },
     stateVariant(state) {
       const variants = {
