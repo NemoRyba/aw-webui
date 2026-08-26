@@ -5,6 +5,8 @@ import { useAdminUiStore } from './stores/adminUi';
 import { useAuthStore } from './stores/auth';
 import { useSettingsStore } from './stores/settings';
 import {
+  OWN_SUMMARY_PAGE,
+  hasOwnSummaryOnly,
   isLandingRedirectPath,
   isNonAdminPathAllowed,
   resolveLandingPage,
@@ -13,6 +15,7 @@ import {
 const Login = () => import('./views/Login.vue');
 const FleetOverview = () => import('./views/fleet/FleetOverview.vue');
 const FleetSummary = () => import('./views/fleet/FleetSummary.vue');
+const FleetMySummary = () => import('./views/fleet/FleetMySummary.vue');
 const FleetUsers = () => import('./views/fleet/FleetUsers.vue');
 const FleetUser = () => import('./views/fleet/FleetUser.vue');
 const FleetDevices = () => import('./views/fleet/FleetDevices.vue');
@@ -31,8 +34,8 @@ const Buckets = () => import('./views/Buckets.vue');
 const Bucket = () => import('./views/Bucket.vue');
 const Timeline = () => import('./views/Timeline.vue');
 const Settings = () => import('./views/settings/Settings.vue');
+const SettingsConnectors = () => import('./views/settings/SettingsConnectors.vue');
 const Admin = () => import('./views/admin/AdminView.vue');
-const CategoryBuilder = () => import('./views/settings/CategoryBuilder.vue');
 // Retained by explicit fork decision: the code stays, visibility is runtime
 // configured by the admin (show_stopwatch_menu), and the guard below keeps it
 // unreachable while that is off.
@@ -53,6 +56,7 @@ const router = new VueRouter({
     { path: '/home', component: FleetOverview, meta: { fullContainer: true } },
     { path: '/fleet', component: FleetOverview, meta: { fullContainer: true } },
     { path: '/fleet/summary', component: FleetSummary, meta: { fullContainer: true } },
+    { path: OWN_SUMMARY_PAGE, component: FleetMySummary, meta: { fullContainer: true } },
     { path: '/fleet/users', component: FleetUsers, meta: { fullContainer: true } },
     {
       path: '/fleet/users/:username',
@@ -71,12 +75,12 @@ const router = new VueRouter({
     { path: '/buckets/:id', component: Bucket, props: true, meta: { adminOnly: true } },
     { path: '/timeline', component: Timeline, meta: { fullContainer: true, adminOnly: true } },
     { path: '/settings', component: Settings, meta: { fullContainer: true, adminOnly: true } },
-    { path: '/admin', component: Admin, meta: { fullContainer: true, adminOnly: true } },
     {
-      path: '/settings/category-builder',
-      component: CategoryBuilder,
-      meta: { adminOnly: true },
+      path: '/settings/connectors',
+      component: SettingsConnectors,
+      meta: { fullContainer: true, adminOnly: true },
     },
+    { path: '/admin', component: Admin, meta: { fullContainer: true, adminOnly: true } },
     // Fork override: stopwatch code is retained, but UI visibility is runtime-configured.
     { path: '/stopwatch', component: Stopwatch },
     { path: '/dev', component: Dev, meta: { adminOnly: true } },
@@ -117,6 +121,22 @@ router.beforeEach(async (to, _from, next) => {
 
     if (to.matched.some(record => record.meta && record.meta.adminOnly) && !authStore.isAdmin) {
       next(landingPage);
+      return;
+    }
+
+    // Users granted only "Eigene Zusammenfassung" have their own page. Send
+    // them there rather than to their start page, so an old bookmark or a
+    // stored landing page still lands on the summary they asked for.
+    if (to.path === '/fleet/summary' && hasOwnSummaryOnly(authStore)) {
+      next(OWN_SUMMARY_PAGE);
+      return;
+    }
+
+    // The personal page is a non-admin page: admins pick any user (their own
+    // included) on the fleet Zusammenfassung. A typed URL or stale bookmark
+    // lands there instead.
+    if (to.path === OWN_SUMMARY_PAGE && authStore.isAdmin) {
+      next('/fleet/summary');
       return;
     }
 

@@ -28,7 +28,7 @@ div.fleet-auth-settings
             | {{ $tr('Require token') }}
 
       b-alert.mt-2.mb-0(:show="!requireToken" variant="warning")
-        | {{ $tr('Turn this on only after every device has been given the token, otherwise those devices stop recording. Run the watcher installer with -FleetToken on each device first.') }}
+        | {{ $tr('An approved device (Administration > Devices) authenticates with its own enrollment key - no reinstall needed. Turn this on once every expected device is approved; devices with neither approval nor token stop recording immediately.') }}
 
   b-card.mt-3(no-body)
     b-card-body.py-2

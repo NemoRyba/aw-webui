@@ -44,6 +44,10 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     Query: 'Abfrage',
     Graph: 'Graph',
     'Raw Data': 'Rohdaten',
+    General: 'Allgemein',
+    Connectors: 'Verbindungen',
+    'Only the built-in admin account can configure connectors.':
+      'Nur das eingebaute Admin-Konto kann Verbindungen konfigurieren.',
     Settings: 'Einstellungen',
     Live: 'Live',
     Users: 'Benutzer',
@@ -572,6 +576,12 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Work > Project': 'Arbeit > Projekt',
     'Field value': 'Feldwert',
     'Generated regex': 'Erzeugter Regex',
+    'Additional field checks': 'Zusaetzliche Feldpruefungen',
+    'Add field check': 'Feldpruefung hinzufuegen',
+    'All checks must match in addition to the pattern.':
+      'Alle Pruefungen muessen zusaetzlich zum Muster zutreffen.',
+    'Saved as an additional rule; the existing rule of the category stays unchanged.':
+      'Wird als zusaetzliche Regel gespeichert; die bestehende Regel der Kategorie bleibt unveraendert.',
     'Save category rule': 'Kategorieregel speichern',
     'Category rule saved': 'Kategorieregel gespeichert',
     'Category already exists': 'Kategorie existiert bereits',
@@ -925,8 +935,8 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Update requested': 'Update angefordert',
     'Update running': 'Update läuft',
     'Manual update starting': 'Manuelles Update wird gestartet',
-    'Manual update failed recently, retrying shortly':
-      'Manuelles Update zuletzt fehlgeschlagen, nächster Versuch in Kürze',
+    'Manual update attempted, waiting for the device to confirm the result':
+      'Manuelles Update ausgeführt - Ergebnis wird bestätigt (kann eine Minute dauern)',
     'Waiting for devices to pick up the update': 'Warte auf Geräte, die das Update abholen',
     'Cancel pending updates': 'Ausstehende Updates abbrechen',
     'Pending updates cancelled': 'Ausstehende Updates abgebrochen',
@@ -945,10 +955,10 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'Require token': 'Token verlangen',
     'While this is off, any device on the LAN can send watcher data. While it is on, only devices holding the token can.':
       'Solange dies aus ist, kann jedes Gerät im LAN Watcher-Daten senden. Solange es an ist, nur Geräte mit dem Token.',
-    'Turn this on only after every device has been given the token, otherwise those devices stop recording. Run the watcher installer with -FleetToken on each device first.':
-      'Erst einschalten, wenn jedes Gerät das Token erhalten hat - sonst hören diese Geräte auf aufzuzeichnen. Vorher auf jedem Gerät den Watcher-Installer mit -FleetToken ausführen.',
+    'An approved device (Administration > Devices) authenticates with its own enrollment key - no reinstall needed. Turn this on once every expected device is approved; devices with neither approval nor token stop recording immediately.':
+      'Ein freigegebenes Gerät (Administration > Geräte) meldet sich mit seinem eigenen Registrierungsschlüssel an - keine Neuinstallation nötig. Erst einschalten, wenn jedes erwartete Gerät freigegeben ist; Geräte ohne Freigabe und ohne Token hören sofort auf aufzuzeichnen.',
     'Devices without the token will stop recording immediately. Has every device been given the token?':
-      'Geräte ohne Token hören sofort auf aufzuzeichnen. Hat jedes Gerät das Token erhalten?',
+      'Geräte ohne Freigabe und ohne Token hören sofort auf aufzuzeichnen. Ist jedes erwartete Gerät freigegeben (oder hat das Token erhalten)?',
     Token: 'Token',
     'Provision a device with: install-watchers.ps1 -FleetToken <token>. The token is stored per machine and survives watcher updates.':
       'Ein Gerät einrichten mit: install-watchers.ps1 -FleetToken <token>. Das Token wird pro Rechner gespeichert und überlebt Watcher-Updates.',
@@ -1021,6 +1031,31 @@ const GERMAN_MESSAGES: Record<string, string> = Object.assign(
     'All pages': 'Alle Seiten',
     'Own view (default)': 'Eigene Auswertung (Standard)',
     'Live (default)': 'Live (Standard)',
+
+    // "Meine Zusammenfassung" (/fleet/me): the personal hours-vs-Redmine page
+    'My summary': 'Meine Zusammenfassung',
+    Yesterday: 'Gestern',
+    'This week': 'Diese Woche',
+    'Last week': 'Letzte Woche',
+    'This month': 'Dieser Monat',
+    'Last month': 'Letzter Monat',
+    'My days': 'Meine Tage',
+    'My projects': 'Meine Projekte',
+    Booked: 'Gebucht',
+    'Days with activity': 'Tage mit Aktivität',
+    'Average per day with activity': 'Ø pro Tag mit Aktivität',
+    'Open day': 'Tag öffnen',
+    'No data found in the selected range.':
+      'Für den gewählten Zeitraum wurden keine Daten gefunden.',
+    'The range is long, so the daily breakdown is not loaded automatically.':
+      'Der Zeitraum ist lang, daher wird die Tagesübersicht nicht automatisch geladen.',
+    'Booked time matches the tracked time.': 'Gebuchte Zeit passt zur erfassten Zeit.',
+    'Less booked than tracked.': 'Weniger gebucht als erfasst.',
+    'More booked than tracked.': 'Mehr gebucht als erfasst.',
+    'No Redmine account is mapped to your user, so booked hours are missing.':
+      'Deinem Benutzer ist kein Redmine-Konto zugeordnet, daher fehlen die gebuchten Stunden.',
+    'Recalculates this range from the raw events instead of the cache.':
+      'Berechnet diesen Zeitraum aus den Rohdaten neu statt aus dem Cache.',
   }
 );
 

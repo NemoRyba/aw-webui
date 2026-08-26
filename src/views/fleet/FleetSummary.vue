@@ -44,12 +44,9 @@ div
           b-spinner.mr-1(v-if="loading || redmineLoading" small)
           | {{ loading ? $tr('Loading...') : $tr('Load evaluation') }}
 
-    div.small.text-muted.mt-2(v-if="ownSummaryOnly")
-      | {{ $tr('Only your own data is shown on this page.') }}
+    hr
 
-    hr(v-if="!ownSummaryOnly")
-
-    div.fleet-summary-picker-header(v-if="!ownSummaryOnly")
+    div.fleet-summary-picker-header
       div
         h5.mb-0 {{ $tr('Users') }}
         small.text-muted {{ selectedUsernames.length }} / {{ userOptions.length }}
@@ -63,11 +60,11 @@ div
           | {{ $tr('Select all') }}
         b-button(size="sm" variant="outline-secondary" @click="clearSelectedUsers" :disabled="usersLoading")
           | {{ $tr('Select none') }}
-    div.aw-loading.mt-3(v-if="!ownSummaryOnly && usersLoading")
+    div.aw-loading.mt-3(v-if="usersLoading")
       | {{ $tr('Loading...') }}
-    b-alert.mt-3(v-else-if="!ownSummaryOnly && usersLoadError" show variant="danger")
+    b-alert.mt-3(v-else-if="usersLoadError" show variant="danger")
       | {{ usersLoadError }}
-    div.fleet-summary-user-grid.mt-3(v-else-if="!ownSummaryOnly")
+    div.fleet-summary-user-grid.mt-3(v-else)
       b-form-checkbox.fleet-summary-user-option(
         v-for="user in filteredUserOptions"
         :key="user.username"
@@ -221,7 +218,6 @@ import 'vue-awesome/icons/arrow-left';
 import 'vue-awesome/icons/arrow-right';
 import 'vue-awesome/icons/sync';
 
-import { useAuthStore } from '~/stores/auth';
 import { useFleetStore } from '~/stores/fleet';
 import { useSettingsStore } from '~/stores/settings';
 import { orderFields, visibleFields } from '~/util/columnOrder';
@@ -236,7 +232,6 @@ export default {
   data() {
     return {
       fleetStore: useFleetStore(),
-      authStore: useAuthStore(),
       settingsStore: useSettingsStore(),
       startDate: moment().format('YYYY-MM-DD'),
       endDate: moment().format('YYYY-MM-DD'),
@@ -266,19 +261,6 @@ export default {
     };
   },
   computed: {
-    ownSummaryOnly() {
-      // Granted "Eigene Zusammenfassung" instead of the full one: the same
-      // page, restricted to this user. The server enforces the restriction
-      // regardless of what the client sends; this only shapes the UI.
-      if (this.authStore.isAdmin) {
-        return false;
-      }
-      const pages = this.authStore.allowedPages || [];
-      return pages.includes('fleet-summary-own') && !pages.includes('fleet-summary');
-    },
-    ownUsername() {
-      return String(this.authStore.username || '');
-    },
     summary() {
       return this.hasLoadedSummary ? this.fleetStore.summary : null;
     },
@@ -387,15 +369,10 @@ export default {
     },
   },
   async mounted() {
+    // NOTE: users granted only "Eigene Zusammenfassung" never reach this page -
+    // the router sends them to /fleet/me (FleetMySummary.vue), a page built for
+    // one person rather than this table filtered down to a single row.
     this.clearLoadedResults();
-    if (this.ownSummaryOnly) {
-      // /0/fleet/users needs the "fleet-users" grant, which this user does not
-      // have - and there is nothing to pick anyway.
-      this.allUserOptions = [{ username: this.ownUsername }];
-      this.selectedUsernames = [this.ownUsername];
-      this.selectionInitialized = true;
-      return;
-    }
     await this.loadUsers();
   },
   beforeDestroy() {

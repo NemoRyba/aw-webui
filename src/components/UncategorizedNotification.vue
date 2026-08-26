@@ -7,7 +7,6 @@ div
       br
       | You have a total of {{ uncategorizedDuration[0] | friendlyduration }} uncategorized time,
       | that's {{ Math.round(100 * uncategorizedDuration[0] / uncategorizedDuration[1]) }}% of all time today.
-      | You can address this by using the #[router-link(:to="{ path: '/settings/category-builder' }") Category Builder].
 </template>
 
 <script lang="ts">

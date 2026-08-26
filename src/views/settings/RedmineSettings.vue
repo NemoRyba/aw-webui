@@ -1,17 +1,16 @@
 <template lang="pug">
 div.redmine-settings
-  div.d-sm-flex.justify-content-between.align-items-start
-    div
-      h5.mt-1.mb-2.mb-sm-0 {{ $tr('Redmine read-only comparison') }}
-      small.text-muted
-        | {{ $tr('Uses only read-only SELECT queries against the Redmine database.') }}
-    div.mt-2.mt-sm-0
-      b-form-checkbox(
-        switch
-        v-model="draft.enabled"
-        :disabled="loading || saving"
-      )
-        | {{ draft.enabled ? $tr('Enabled') : $tr('Disabled') }}
+  //- Same layout convention as the LDAP panel: heading, then the enable
+  //- switch top left, fields below, actions bottom left with Save first.
+  h5.mt-1.mb-2 {{ $tr('Redmine read-only comparison') }}
+  p.text-muted.small.mb-2
+    | {{ $tr('Uses only read-only SELECT queries against the Redmine database.') }}
+  b-form-checkbox.mb-3(
+    switch
+    v-model="draft.enabled"
+    :disabled="loading || saving"
+  )
+    | {{ draft.enabled ? $tr('Enabled') : $tr('Disabled') }}
 
   b-alert.mt-3(:show="Boolean(error)" variant="danger")
     | {{ error }}
@@ -196,6 +195,7 @@ export default {
 .redmine-settings-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-start;
   gap: 0.5rem;
 }
 </style>

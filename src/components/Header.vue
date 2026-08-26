@@ -66,10 +66,15 @@ div(:class="{'fixed-top-padding': fixedTopMenu}")
           div.px-2.px-lg-1
             icon(name="database")
             | {{ $tr('Raw Data') }}
-        b-nav-item(v-if="authIsAdmin" to="/settings")
-          div.px-2.px-lg-1
-            icon(name="cog")
-            | {{ $tr('Settings') }}
+        b-nav-item-dropdown(v-if="authIsAdmin" right)
+          template(slot="button-content")
+            div.d-inline.px-2.px-lg-1
+              icon(name="cog")
+              | {{ $tr('Settings') }}
+          b-dropdown-item(to="/settings")
+            | {{ $tr('General') }}
+          b-dropdown-item(v-if="authIsBuiltinAdmin" to="/settings/connectors")
+            | {{ $tr('Connectors') }}
 
 </template>
 
@@ -126,6 +131,10 @@ export default {
     authIsAdmin() {
       const authStore = useAuthStore();
       return authStore.isAdmin;
+    },
+    authIsBuiltinAdmin() {
+      // Connector settings are restricted to the built-in admin account.
+      return useAuthStore().username === 'admin';
     },
     authUsername() {
       const authStore = useAuthStore();

@@ -24,6 +24,8 @@ interface Rule {
   regex?: string;
   ignore_case?: boolean;
   select_keys?: string[];
+  // Additional AND-ed per-field checks (see aw_transform.classify).
+  conditions?: { field: string; regex: string; ignore_case?: boolean }[];
 }
 
 type Category = [string[], Rule];

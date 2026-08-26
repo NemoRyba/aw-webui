@@ -2,11 +2,9 @@
 div
   h3 {{ $tr('Settings') }}
 
+  SettingsNav
+
   hr
-
-  AdminAuthSettings(v-if="showAdminAuthSettings")
-
-  hr(v-if="showAdminAuthSettings")
 
   DaystartSettings
 
@@ -15,10 +13,6 @@ div
   FleetSummaryPrecomputeSettings
 
   hr
-
-  RedmineSettings(v-if="showAdminAuthSettings")
-
-  hr(v-if="showAdminAuthSettings")
 
   TimelineDurationSettings
 
@@ -45,12 +39,10 @@ div
 
 <script lang="ts">
 import { useSettingsStore } from '~/stores/settings';
-import { useAuthStore } from '~/stores/auth';
 
-import AdminAuthSettings from '~/views/settings/AdminAuthSettings.vue';
+import SettingsNav from '~/components/SettingsNav.vue';
 import DaystartSettings from '~/views/settings/DaystartSettings.vue';
 import FleetSummaryPrecomputeSettings from '~/views/settings/FleetSummaryPrecomputeSettings.vue';
-import RedmineSettings from '~/views/settings/RedmineSettings.vue';
 import TimelineDurationSettings from '~/views/settings/TimelineDurationSettings.vue';
 import CategorizationSettings from '~/views/settings/CategorizationSettings.vue';
 import DeveloperSettings from '~/views/settings/DeveloperSettings.vue';
@@ -61,21 +53,15 @@ import ActivePatternSettings from '~/views/settings/ActivePatternSettings.vue';
 export default {
   name: 'Settings',
   components: {
+    SettingsNav,
     DaystartSettings,
     FleetSummaryPrecomputeSettings,
-    RedmineSettings,
-    AdminAuthSettings,
     TimelineDurationSettings,
     CategorizationSettings,
     Theme,
     ColorSettings,
     DeveloperSettings,
     ActivePatternSettings,
-  },
-  computed: {
-    showAdminAuthSettings() {
-      return useAuthStore().username === 'admin';
-    },
   },
   async created() {
     await this.init();

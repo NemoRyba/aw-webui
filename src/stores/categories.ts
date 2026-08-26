@@ -7,6 +7,7 @@ import {
   build_category_hierarchy,
   createMissingParents,
   annotate,
+  categoryRules,
   Category,
   Rule,
 } from '~/util/classes';
@@ -49,11 +50,15 @@ export const useCategoryStore = defineStore('categories', {
       return _.sortBy(hier, [c => c.id || 0]);
     },
     classes_for_query(): [string[], Rule][] {
-      return this.classes
-        .filter(c => c.rule.type !== null)
-        .map(c => {
-          return [c.name, c.rule];
-        });
+      // A category may carry extra rules beyond its main one; the query
+      // engine accepts repeated (name, rule) entries, so flatten them here.
+      const entries: [string[], Rule][] = [];
+      for (const c of this.classes.filter(cat => cat.rule.type !== null)) {
+        for (const rule of categoryRules(c)) {
+          entries.push([c.name, rule]);
+        }
+      }
+      return entries;
     },
     all_categories(): string[][] {
       // Returns a list of category names (a list of list of strings)
@@ -181,6 +186,23 @@ export const useCategoryStore = defineStore('categories', {
     },
     removeClass(this: State, classId: number) {
       this.classes = this.classes.filter((c: Category) => c.id !== classId);
+      this.classes_unsaved_changes = true;
+    },
+    addExtraRuleToClass(this: State, name: string[], rule: Rule) {
+      // Append an independent rule to a category, leaving its main rule
+      // untouched - used when a conditioned (multi-field) rule routes more
+      // events into an existing category.
+      const index = this.classes.findIndex((c: Category) => _.isEqual(c.name, name));
+      if (index === -1) {
+        throw new Error('Unknown category: ' + name.join(' > '));
+      }
+      const cat = this.classes[index];
+      // Replace the entry via splice: Vue 2 cannot observe a newly added
+      // key on an existing object, but array splices are reactive.
+      this.classes.splice(index, 1, {
+        ...cat,
+        extra_rules: [...(cat.extra_rules || []), rule],
+      });
       this.classes_unsaved_changes = true;
     },
     appendClassRule(this: State, classId: number, pattern: string) {

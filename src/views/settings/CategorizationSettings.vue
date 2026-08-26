@@ -13,11 +13,6 @@ div
       | Export
   p
     | Rules for categorizing events. An event can only have one category. If several categories match, the deepest one will be chosen.
-  p
-    | You can use the #[router-link(:to="{ path: '/settings/category-builder' }") Category Builder] to quickly create categories from uncategorized activity.
-    | You can also find and share categorization rule presets on #[a(href="https://forum.activitywatch.net/c/projects/category-rules") the forum].
-    | For help on how to write categorization rules, see #[a(href="https://docs.activitywatch.net/en/latest/features/categorization.html") the documentation].
-
   div.d-sm-flex.justify-content-between.align-items-center.my-4
     div
       h6.mb-1 {{ $tr('AFK overlay color') }}

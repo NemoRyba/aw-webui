@@ -1,5 +1,8 @@
 export const DEFAULT_LANDING_PAGE = '/fleet';
 export const SHELVED_HOME_PAGE = '/home';
+// "Meine Zusammenfassung": a page of its own, not the fleet Zusammenfassung
+// filtered down to one row. Own hours vs. Redmine bookings, per day.
+export const OWN_SUMMARY_PAGE = '/fleet/me';
 
 function stripQueryAndHash(path: string): string {
   return path.split(/[?#]/, 1)[0];
@@ -40,6 +43,9 @@ export function getSettingsLandingPage(settingsStore: { landingpage?: string }):
 
 // Pages a landing page may point to, by role. Non-admins only get pages their
 // navigation actually exposes.
+// "Meine Zusammenfassung" is deliberately absent: admins pick any user -
+// including themselves - on the fleet Zusammenfassung, so the personal page
+// is not offered to them at all.
 export const ADMIN_LANDING_PAGES = [
   '/fleet',
   '/fleet/summary',
@@ -58,12 +64,25 @@ export const USER_LANDING_PAGES = ['/fleet'];
 export const FLEET_PAGE_PATHS: Record<string, string> = {
   'fleet-live': '/fleet',
   'fleet-summary': '/fleet/summary',
-  // Same page, restricted to the user's own row. The server enforces the
-  // restriction; this mapping only decides navigation.
-  'fleet-summary-own': '/fleet/summary',
+  // Its own page ("Meine Zusammenfassung"), not the fleet table filtered to one
+  // row. The server enforces the restriction either way; this only navigates.
+  'fleet-summary-own': OWN_SUMMARY_PAGE,
   'fleet-users': '/fleet/users',
   'fleet-devices': '/fleet/devices',
 };
+
+// True when the user may only see their own summary. Such a user gets
+// "Meine Zusammenfassung" instead of the fleet-wide Zusammenfassung.
+export function hasOwnSummaryOnly(authStore: {
+  isAdmin?: boolean;
+  allowedPages?: string[];
+}): boolean {
+  if (authStore?.isAdmin) {
+    return false;
+  }
+  const allowed = new Set(authStore?.allowedPages || []);
+  return allowed.has('fleet-summary-own') && !allowed.has('fleet-summary');
+}
 
 export function ownFleetUserPath(username: string): string {
   return username ? `/fleet/users/${encodeURIComponent(username)}` : '/fleet';
@@ -72,6 +91,11 @@ export function ownFleetUserPath(username: string): string {
 // Start-page keys an ADMIN may pick in the per-user table (Administration).
 export const ADMIN_LANDING_KEY_PATHS: Record<string, string> = {
   ...FLEET_PAGE_PATHS,
+  // The personal page is a non-admin page. An admin whose stored start page
+  // still says 'fleet-summary-own' (set before the page was removed for
+  // admins) degrades to the fleet Zusammenfassung, where they can pick
+  // themselves.
+  'fleet-summary-own': '/fleet/summary',
   timeline: '/timeline',
   buckets: '/buckets',
 };
@@ -95,9 +119,14 @@ export function isNonAdminPathAllowed(
   if (allowed.has('fleet-live') && cleanPath === '/fleet') {
     return true;
   }
+  if (allowed.has('fleet-summary') && cleanPath === '/fleet/summary') {
+    return true;
+  }
+  // Either grant may open the personal page; only the wide one opens the
+  // fleet-wide table.
   if (
     (allowed.has('fleet-summary') || allowed.has('fleet-summary-own')) &&
-    cleanPath === '/fleet/summary'
+    cleanPath === OWN_SUMMARY_PAGE
   ) {
     return true;
   }

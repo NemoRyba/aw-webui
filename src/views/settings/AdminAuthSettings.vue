@@ -83,13 +83,14 @@ div.admin-auth-settings
           type="password"
           autocomplete="current-password"
         )
-      b-button(
-        variant="outline-secondary"
-        size="sm"
-        @click="testLdapSettings"
-        :disabled="testing"
-      )
-        | {{ testing ? $tr('Testing...') : $tr('Test LDAP') }}
+      div.admin-auth-actions
+        b-button(
+          variant="outline-secondary"
+          size="sm"
+          @click="testLdapSettings"
+          :disabled="testing"
+        )
+          | {{ testing ? $tr('Testing...') : $tr('Test LDAP') }}
       p.text-muted.small.mt-3
         | {{ $tr('If no test credentials are provided, only the service bind is tested.') }}
 
@@ -220,7 +221,8 @@ export default {
 
 .admin-auth-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  gap: 0.5rem;
 }
 
 @media (max-width: 900px) {
@@ -228,5 +230,4 @@ export default {
     grid-template-columns: 1fr;
   }
 }
-
 </style>

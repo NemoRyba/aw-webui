@@ -214,13 +214,22 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
         div.small.text-muted.mb-2(v-if="dailyWatcherOptions.length === 0")
           | {{ $tr('No watchers available for the current selection.') }}
         div.fleet-daily-watcher-controls.mb-3(v-else)
-          b-form-checkbox(
-            v-for="watcher in dailyWatcherOptions"
-            :key="watcher.value"
-            v-model="selectedDailyWatcherKeys"
-            :value="watcher.value"
-          )
-            | {{ watcher.text }}
+          div.fleet-daily-watcher-group(v-for="group in dailyWatcherGroups" :key="group.label")
+            b-form-checkbox.fleet-daily-watcher-group-head(
+              :checked="isDailyWatcherGroupSelected(group)"
+              :indeterminate="isDailyWatcherGroupPartial(group)"
+              @change="toggleDailyWatcherGroup(group, $event)"
+            )
+              strong {{ group.label }}
+              span.small.text-muted.ml-1 {{ dailyWatcherGroupCount(group) }}
+            div.fleet-daily-watcher-group-children
+              b-form-checkbox(
+                v-for="watcher in group.options"
+                :key="watcher.value"
+                v-model="selectedDailyWatcherKeys"
+                :value="watcher.value"
+              )
+                | {{ watcher.childLabel }}
         fleet-system-metrics-wave.mb-3(
           v-if="selectedSystemMetricDeviceIds.length > 0"
           :key="'system-metrics-' + selectedSystemMetricDeviceIds.join('|') + '-' + panelRefreshKeys.dailyTimeline"
@@ -454,6 +463,43 @@ div.fleet-activity-summary.mb-3(:class="{ 'fleet-activity-summary--dark': active
           | {{ $tr('Invalid pattern') }}
         b-form-text.text-warning(v-if="fleetCategoryRuleBroadPattern")
           | {{ $tr('Pattern too broad') }}
+
+      div.mb-2
+        div.d-flex.align-items-center.mb-1
+          small.text-muted {{ $tr('Additional field checks') }}
+          b-button.ml-2(
+            size="sm"
+            variant="outline-secondary"
+            :disabled="!fleetAvailableConditionFields.length"
+            @click="addFleetCategoryRuleCondition"
+          )
+            | {{ $tr('Add field check') }}
+        div.row.mb-1(v-for="(condition, index) in fleetCategoryRuleConditions" :key="index")
+          div.col-md-4
+            b-form-select(
+              v-model="condition.field"
+              :options="fleetConditionFieldOptions(index)"
+              size="sm"
+            )
+          div.col-md-6
+            b-form-input(
+              v-model.trim="condition.pattern"
+              :state="fleetConditionPatternState(condition)"
+              :placeholder="$tr('Pattern')"
+              size="sm"
+            )
+          div.col-md-2
+            b-button(
+              size="sm"
+              variant="outline-danger"
+              @click="fleetCategoryRuleConditions.splice(index, 1)"
+            )
+              | {{ $tr('Remove') }}
+        small.text-muted(v-if="fleetCategoryRuleConditions.length")
+          | {{ $tr('All checks must match in addition to the pattern.') }}
+
+      b-alert(:show="fleetCategoryRuleMode === 'append' && fleetCategoryRuleConditions.length > 0" variant="info")
+        | {{ $tr('Saved as an additional rule; the existing rule of the category stays unchanged.') }}
 
       div.row
         div.col-md-7(v-if="fleetCategoryRuleMode === 'append'")
@@ -761,6 +807,7 @@ export default {
       fleetCategoryRuleTarget: null,
       fleetCategoryRuleMode: 'append',
       fleetCategoryRuleField: 'app',
+      fleetCategoryRuleConditions: [],
       fleetCategoryRulePattern: '',
       fleetCategoryRuleCategory: null,
       fleetCategoryRuleNewPath: '',
@@ -895,7 +942,26 @@ export default {
         _.isEqual(category.name, this.fleetCategoryRuleCategory)
       );
     },
+    fleetAvailableConditionFields() {
+      const used = new Set([
+        this.fleetCategoryRuleField,
+        ...this.fleetCategoryRuleConditions.map(condition => condition.field),
+      ]);
+      // The aggregated app row carries no title value, but a typed title
+      // check is exactly what splits host processes - offer it anyway.
+      return ['title', 'app', 'process_name', 'username'].filter(field => !used.has(field));
+    },
+    fleetConditionsValid() {
+      return this.fleetCategoryRuleConditions.every(
+        condition => condition.field && condition.pattern && validateRegex(condition.pattern)
+      );
+    },
     fleetCategoryRuleAppendCompatibilityError() {
+      // A conditioned rule becomes an independent extra rule with its own
+      // field scope, so the existing rule's select_keys do not apply.
+      if (this.fleetCategoryRuleConditions.length > 0) {
+        return '';
+      }
       const category = this.selectedFleetCategoryRuleCategory;
       if (!category || category.rule?.type !== 'regex') {
         return '';
@@ -918,6 +984,7 @@ export default {
       }
       if (
         this.fleetCategoryRuleMode === 'append' &&
+        this.fleetCategoryRuleConditions.length === 0 &&
         category?.rule?.type === 'regex' &&
         !(category.rule.select_keys || []).length
       ) {
@@ -932,6 +999,9 @@ export default {
     },
     fleetCategoryRuleCanSave() {
       if (!this.fleetCategoryRuleTarget || !validateRegex(this.fleetCategoryRulePattern || '')) {
+        return false;
+      }
+      if (!this.fleetConditionsValid) {
         return false;
       }
       if (this.fleetCategoryRuleAppendCompatibilityError || this.fleetCategoryRuleNewExists) {
@@ -1544,9 +1614,16 @@ export default {
     dailyWatcherOptions() {
       const timelineOptions = this.dailyTimelineBuckets.map(bucket => {
         const identity = this.bucketIdentity(bucket);
+        const sessionLabel = `${this.$tr('Session')} ${identity.sessionId}${
+          identity.sessionType ? ` (${identity.sessionType})` : ''
+        }`;
         return {
           value: String(bucket.id),
           text: this.buildDailyTimelineBucketLabel(bucket),
+          // Tree grouping: every device carries the same watchers, so the
+          // watcher is the group and the devices are its children.
+          groupLabel: identity.watcherLabel,
+          childLabel: `${identity.deviceName} · ${sessionLabel}`,
           sortDeviceName: identity.deviceName,
           sortSessionId: identity.sessionId,
           sortWatcherLabel: identity.watcherLabel,
@@ -1558,6 +1635,8 @@ export default {
       const systemMetricOptions = this.systemMetricDevices.map(device => ({
         value: this.systemMetricWatcherKey(device.deviceId),
         text: `${this.$tr('System load')} | ${device.deviceName || device.deviceId}`,
+        groupLabel: this.$tr('System load'),
+        childLabel: device.deviceName || device.deviceId,
         sortDeviceName: device.deviceName || device.deviceId,
         sortSessionId: 'zz-system',
         sortWatcherLabel: this.$tr('System load'),
@@ -1573,6 +1652,17 @@ export default {
         ],
         ['asc', 'asc', 'asc']
       );
+    },
+    dailyWatcherGroups() {
+      const groups = new Map();
+      for (const option of this.dailyWatcherOptions) {
+        const label = String(option.groupLabel || option.sortWatcherLabel || '');
+        if (!groups.has(label)) {
+          groups.set(label, { label, options: [] });
+        }
+        groups.get(label).options.push(option);
+      }
+      return _.orderBy(Array.from(groups.values()), [g => g.label.toLowerCase()], ['asc']);
     },
     systemMetricDevices() {
       if (!this.showDetailedWatcherTimeline) {
@@ -2270,6 +2360,7 @@ export default {
       this.fleetCategoryRuleCategory = null;
       this.fleetCategoryRuleNewPath = this.suggestFleetCategoryPath(app || processName);
       this.fleetCategoryRuleIgnoreCase = true;
+      this.fleetCategoryRuleConditions = [];
       this.fleetCategoryRuleSaving = false;
       this.fleetCategoryRuleMessage = '';
       this.fleetCategoryRuleError = '';
@@ -2284,6 +2375,30 @@ export default {
     generatedFleetCategoryRulePattern() {
       const value = this.fleetCategoryRuleFieldValue;
       return value ? _.escapeRegExp(value) : '';
+    },
+    addFleetCategoryRuleCondition() {
+      const field = this.fleetAvailableConditionFields[0];
+      if (!field) {
+        return;
+      }
+      const target = this.fleetCategoryRuleTarget || {};
+      const value = String(target[field] || '').trim();
+      this.fleetCategoryRuleConditions.push({
+        field,
+        pattern: value ? _.escapeRegExp(value) : '',
+      });
+    },
+    fleetConditionFieldOptions(index) {
+      const current = this.fleetCategoryRuleConditions[index]?.field;
+      return ['title', 'app', 'process_name', 'username']
+        .filter(field => field === current || this.fleetAvailableConditionFields.includes(field))
+        .map(field => ({ value: field, text: field }));
+    },
+    fleetConditionPatternState(condition) {
+      if (!condition.pattern) {
+        return false;
+      }
+      return validateRegex(condition.pattern);
     },
     suggestFleetCategoryPath(value) {
       const text = String(value || '')
@@ -2306,6 +2421,13 @@ export default {
       };
       if (this.fleetCategoryRuleField) {
         rule.select_keys = [this.fleetCategoryRuleField];
+      }
+      if (this.fleetCategoryRuleConditions.length > 0) {
+        rule.conditions = this.fleetCategoryRuleConditions.map(condition => ({
+          field: condition.field,
+          regex: condition.pattern,
+          ignore_case: this.fleetCategoryRuleIgnoreCase,
+        }));
       }
       return rule;
     },
@@ -2330,15 +2452,21 @@ export default {
             throw new Error(this.$tr('Choose category'));
           }
           const rule = category.rule || { type: 'none' };
-          if (rule.type === 'none' || rule.type === null) {
+          if (this.fleetCategoryRuleConditions.length > 0) {
+            // Never OR a conditioned pattern into the existing regex - that
+            // would drop the AND semantics. Store it as an extra rule; the
+            // category's existing rule stays untouched.
+            this.categoryStore.addExtraRuleToClass(category.name, this.buildFleetCategoryRule());
+          } else if (rule.type === 'none' || rule.type === null) {
             category.rule = this.buildFleetCategoryRule();
+            this.categoryStore.classes_unsaved_changes = true;
           } else if (rule.type === 'regex') {
             category.rule.regex = `${rule.regex || ''}|${this.fleetCategoryRulePattern}`;
             if (rule.ignore_case === undefined) {
               category.rule.ignore_case = this.fleetCategoryRuleIgnoreCase;
             }
+            this.categoryStore.classes_unsaved_changes = true;
           }
-          this.categoryStore.classes_unsaved_changes = true;
         }
 
         await this.categoryStore.save();
@@ -2908,6 +3036,27 @@ export default {
       }
 
       return parts.join(' | ');
+    },
+    isDailyWatcherGroupSelected(group) {
+      const selected = new Set(this.selectedDailyWatcherKeys.map(String));
+      return group.options.length > 0 && group.options.every(o => selected.has(String(o.value)));
+    },
+    isDailyWatcherGroupPartial(group) {
+      const selected = new Set(this.selectedDailyWatcherKeys.map(String));
+      const count = group.options.filter(o => selected.has(String(o.value))).length;
+      return count > 0 && count < group.options.length;
+    },
+    dailyWatcherGroupCount(group) {
+      const selected = new Set(this.selectedDailyWatcherKeys.map(String));
+      const count = group.options.filter(o => selected.has(String(o.value))).length;
+      return `${count}/${group.options.length}`;
+    },
+    toggleDailyWatcherGroup(group, checked) {
+      const groupValues = new Set(group.options.map(o => String(o.value)));
+      const kept = this.selectedDailyWatcherKeys.filter(v => !groupValues.has(String(v)));
+      this.selectedDailyWatcherKeys = checked
+        ? [...kept, ...group.options.map(o => o.value)]
+        : kept;
     },
     selectAllDailyWatchers() {
       this.selectedDailyWatcherKeys = this.dailyWatcherOptions.map(option => option.value);
@@ -5061,15 +5210,34 @@ export default {
 }
 
 .fleet-daily-watcher-controls {
+  /* One card per watcher TYPE with its devices as children - grows with
+     content instead of scrolling inside the panel. */
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: 0.35rem 0.75rem;
-  max-height: 10rem;
-  overflow: auto;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 0.5rem 0.75rem;
   padding: 0.6rem;
   border: 1px solid rgba(127, 127, 127, 0.22);
   border-radius: 0.45rem;
   background: rgba(127, 127, 127, 0.08);
+}
+
+.fleet-daily-watcher-group {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid rgba(127, 127, 127, 0.18);
+  border-radius: 0.4rem;
+  background: rgba(127, 127, 127, 0.06);
+}
+
+.fleet-daily-watcher-group-head {
+  margin-bottom: 0.15rem;
+}
+
+.fleet-daily-watcher-group-children {
+  margin-left: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.85rem;
 }
 
 .fleet-summary-empty {

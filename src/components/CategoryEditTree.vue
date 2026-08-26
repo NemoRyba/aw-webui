@@ -18,6 +18,10 @@ div
       span.d-none.d-md-inline
         span(v-if="_class.rule.type === 'regex'") Rule ({{_class.rule.type}}): #[code {{_class.rule.regex}}]
         span(v-else, style="color: #888") No rule
+        span.text-muted(v-if="(_class.rule.conditions || []).length")
+          |  +{{ (_class.rule.conditions || []).length }} condition(s)
+        span.text-muted(v-if="(_class.extra_rules || []).length")
+          |  +{{ (_class.extra_rules || []).length }} rule(s)
       span.float-right
         b-btn.ml-1.border-0(size="sm", variant="outline-secondary", @click="showEditModal(_class.id)" pill)
           icon(name="edit")

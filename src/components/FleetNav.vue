@@ -15,8 +15,10 @@ div.mb-3
         | {{ $tr('My evaluation') }}
       b-nav-item(v-if="hasPage('fleet-live')" to="/fleet" exact exact-active-class="active")
         | {{ $tr('Live') }}
-      b-nav-item(v-if="hasPage('fleet-summary') || hasPage('fleet-summary-own')" to="/fleet/summary" exact exact-active-class="active")
+      b-nav-item(v-if="hasPage('fleet-summary')" to="/fleet/summary" exact exact-active-class="active")
         | {{ $tr('Zusammenfassung') }}
+      b-nav-item(v-if="hasPage('fleet-summary-own')" :to="ownSummaryPath" exact exact-active-class="active")
+        | {{ $tr('My summary') }}
       b-nav-item(v-if="hasPage('fleet-users')" to="/fleet/users" exact exact-active-class="active")
         | {{ $tr('Users') }}
       b-nav-item(v-if="hasPage('fleet-devices')" to="/fleet/devices" exact exact-active-class="active")
@@ -25,7 +27,7 @@ div.mb-3
 
 <script lang="ts">
 import { useAuthStore } from '~/stores/auth';
-import { ownFleetUserPath } from '~/util/landingPage';
+import { OWN_SUMMARY_PAGE, ownFleetUserPath } from '~/util/landingPage';
 
 export default {
   name: 'FleetNav',
@@ -35,6 +37,9 @@ export default {
     },
     ownUserPath() {
       return ownFleetUserPath(useAuthStore().username);
+    },
+    ownSummaryPath() {
+      return OWN_SUMMARY_PAGE;
     },
     isOwnActive() {
       const own = this.ownUserPath.toLowerCase();

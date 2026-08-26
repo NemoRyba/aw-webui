@@ -18,6 +18,7 @@ div
 <script lang="ts">
 import Vue from 'vue';
 import { useCategoryStore } from '~/stores/categories';
+import { categoryRules } from '~/util/classes';
 
 const SEP = ' > ';
 
@@ -44,18 +45,22 @@ export default Vue.extend({
     categoriesWithRules() {
       if (this.mode === 'categories') {
         // Get the category and all subcategories
-        return this.categories
-          .filter(cat => {
-            const name = cat.name.join(SEP);
-            for (const filterCat of this.filterCategoriesData) {
-              if (name.includes(filterCat.join(SEP))) {
-                return true;
+        return (
+          this.categories
+            .filter(cat => {
+              const name = cat.name.join(SEP);
+              for (const filterCat of this.filterCategoriesData) {
+                if (name.includes(filterCat.join(SEP))) {
+                  return true;
+                }
               }
-            }
-            return false;
-          })
-          .filter(cat => cat.rule.type === 'regex')
-          .map(cat => [cat.name, cat.rule]);
+              return false;
+            })
+            .filter(cat => cat.rule.type === 'regex' || (cat.extra_rules || []).length > 0)
+            // A category may carry extra rules; the query engine accepts
+            // repeated (name, rule) entries, so flatten them here too.
+            .flatMap(cat => categoryRules(cat).map(rule => [cat.name, rule]))
+        );
       } else if (this.mode === 'custom') {
         return [[['searched'], { type: 'regex', regex: this.pattern }]];
       } else {

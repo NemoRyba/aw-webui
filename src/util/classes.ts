@@ -6,11 +6,22 @@ const level_sep = '>';
 const CLASSIFY_KEYS = ['app', 'title'];
 const UNCATEGORIZED = ['Uncategorized'];
 
+// One additional field check on a rule. Conditions are AND-ed onto the
+// rule's primary regex, so app + title together can decide a category -
+// needed for host processes like ApplicationFrameHost.exe that front many
+// unrelated programs.
+export interface RuleCondition {
+  field: string;
+  regex: string;
+  ignore_case?: boolean;
+}
+
 export interface Rule {
   type: 'regex' | 'none';
   regex?: string;
   ignore_case?: boolean;
   select_keys?: string[];
+  conditions?: RuleCondition[];
 }
 
 export interface Category {
@@ -19,10 +30,39 @@ export interface Category {
   name_pretty?: string;
   subname?: string;
   rule: Rule;
+  // Additional independent rules (OR-ed with `rule`). Lets a category keep
+  // its existing broad rule untouched while conditioned rules route more
+  // events into it - "leave the category as it is, add an app+title rule".
+  extra_rules?: Rule[];
   data?: Record<string, any>;
   depth?: number;
   parent?: string[];
   children?: Category[];
+}
+
+// Every rule of a category, main first. The query engine accepts repeated
+// (name, rule) entries, so callers can flatten with this.
+export function categoryRules(cat: Category): Rule[] {
+  return [cat.rule, ...(cat.extra_rules || [])].filter(r => r && r.type === 'regex');
+}
+
+function conditionsMatch(rule: Rule, data: Record<string, any>): boolean {
+  for (const condition of rule.conditions || []) {
+    // A malformed condition fails closed - it must not widen the rule.
+    if (!condition.field || !condition.regex) {
+      return false;
+    }
+    const value = data[condition.field];
+    if (typeof value !== 'string') {
+      return false;
+    }
+    const ignoreCase =
+      condition.ignore_case === undefined ? rule.ignore_case : condition.ignore_case;
+    if (!RegExp(condition.regex, ignoreCase ? 'i' : '').test(value)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 const COLOR_UNCAT = '#CCC';
@@ -191,7 +231,36 @@ export function cleanCategory(cat: Category): Category {
   if (cat.rule && (cat.rule.type === null || cat.rule.type === 'none')) {
     cat.rule = { type: 'none' };
   }
+  if (cat.rule) {
+    cleanRuleConditions(cat.rule);
+  }
+  if (cat.extra_rules) {
+    // Keep only rules that can still match something.
+    cat.extra_rules = cat.extra_rules
+      .filter(rule => rule && rule.type === 'regex')
+      .map(rule => {
+        cleanRuleConditions(rule);
+        return rule;
+      })
+      .filter(rule => rule.regex || (rule.conditions || []).length > 0);
+    if (cat.extra_rules.length === 0) {
+      delete cat.extra_rules;
+    }
+  }
   return cat;
+}
+
+function cleanRuleConditions(rule: Rule) {
+  if (!rule.conditions) {
+    return;
+  }
+  // Drop conditions that could never be satisfied (no field or no pattern).
+  rule.conditions = rule.conditions.filter(
+    condition => condition && condition.field && condition.regex
+  );
+  if (rule.conditions.length === 0) {
+    delete rule.conditions;
+  }
 }
 
 export function loadClasses(): Category[] {
@@ -211,14 +280,19 @@ export function matchString(str: string, categories: Category[] | null): Categor
     categories = loadClasses();
   }
 
-  // Compile regexes
-  const regexes: [Category, RegExp][] = categories
-    .filter(c => c.rule.type == 'regex')
-    .map(c => {
+  // Compile regexes. Rules with field conditions are skipped here: a bare
+  // string carries no fields to check them against, so they can neither be
+  // confirmed nor safely assumed.
+  const regexes: [Category, RegExp][] = [];
+  for (const c of categories) {
+    for (const rule of categoryRules(c)) {
+      if (!rule.regex || (rule.conditions || []).length > 0) {
+        continue;
+      }
       // using 'm' flag to make `$` and `^` in rules work
-      const re = RegExp(c.rule.regex, (c.rule.ignore_case ? 'i' : '') + 'm');
-      return [c, re];
-    });
+      regexes.push([c, RegExp(rule.regex, (rule.ignore_case ? 'i' : '') + 'm')]);
+    }
+  }
 
   // Find the matching category.
   // If several categories match the event, the deepest category will be chosen.
@@ -231,23 +305,49 @@ export function matchString(str: string, categories: Category[] | null): Categor
 
 // this is used only in tests
 export function classifyEvents(events: IEvent[], categories: Category[]): IEvent[] {
-  // Compile regexes
-  const regexes: [Category, RegExp][] = categories
-    .filter(c => c.rule.type == 'regex')
-    .map(c => {
-      const re = RegExp(c.rule.regex, c.rule.ignore_case ? 'i' : '');
-      return [c, re];
-    });
+  // Compile every rule of every category (a category may have extra rules).
+  const compiled: [Category, Rule, RegExp | null][] = [];
+  for (const c of categories) {
+    for (const rule of categoryRules(c)) {
+      compiled.push([c, rule, rule.regex ? RegExp(rule.regex, rule.ignore_case ? 'i' : '') : null]);
+    }
+  }
 
-  // Classify events using compiled regexes.
-  // If several categories match the event, the deepest category will be chosen.
+  // Classify events using compiled regexes. Mirrors the server
+  // (aw_transform.classify): all conditions must hold AND the primary regex
+  // must hit one of the selected keys; a conditions-only rule is legal. The
+  // deepest matching category wins; between equally deep matches the rule
+  // with more conditions (the more specific one) wins.
   return events.map((e: IEvent) => {
-    const matchingCats: [Category, RegExp][] = regexes.filter(c => {
-      const keys = c[0].rule.select_keys?.length ? c[0].rule.select_keys : CLASSIFY_KEYS;
-      return _.map(keys, key => c[1].test(e.data[key])).some(x => x);
+    const matches = compiled.filter(([, rule, re]) => {
+      if (!conditionsMatch(rule, e.data)) {
+        return false;
+      }
+      if (!re) {
+        return (rule.conditions || []).length > 0;
+      }
+      const keys = rule.select_keys?.length ? rule.select_keys : CLASSIFY_KEYS;
+      return _.map(keys, key => typeof e.data[key] === 'string' && re.test(e.data[key])).some(
+        x => x
+      );
     });
-    if (matchingCats.length > 0) {
-      const category = pickDeepest(matchingCats.map(c => c[0]));
+    if (matches.length > 0) {
+      // Same picker as the server: depth first, then condition count, and a
+      // full tie goes to the later entry.
+      let category = matches[0][0];
+      let bestDepth = category.name.length;
+      let bestConditions = (matches[0][1].conditions || []).length;
+      for (const [c, rule] of matches.slice(1)) {
+        const conditions = (rule.conditions || []).length;
+        if (
+          c.name.length > bestDepth ||
+          (c.name.length === bestDepth && conditions >= bestConditions)
+        ) {
+          category = c;
+          bestDepth = c.name.length;
+          bestConditions = conditions;
+        }
+      }
       e.data.$category = category.name;
     } else {
       e.data.$category = UNCATEGORIZED;

@@ -473,8 +473,12 @@ export default {
         up_to_date: '',
         update_starting: this.$tr('Update starting'),
         manual_update_starting: this.$tr('Manual update starting'),
+        // The install runs detached; the supervisor cannot see its result.
+        // This state only means "attempted, cooling down" - claiming failure
+        // here caused false alarms whenever an update SUCCEEDED (the message
+        // shows for ~1 minute until the device confirms its new version).
         manual_update_recently_attempted_waiting: this.$tr(
-          'Manual update failed recently, retrying shortly'
+          'Manual update attempted, waiting for the device to confirm the result'
         ),
         update_recently_attempted_waiting: this.$tr('Update recently attempted, waiting'),
         update_available_auto_update_disabled: this.$tr('Update available, auto-update disabled'),

@@ -85,6 +85,43 @@ b-modal(v-if="event && event.id", :id="'edit-modal-' + event.id", ref="eventEdit
         b-form-text.text-warning(v-if="categoryRuleBroadPattern")
           | {{ $tr('Pattern too broad') }}
 
+      div.mb-2
+        div.d-flex.align-items-center.mb-1
+          small.text-muted {{ $tr('Additional field checks') }}
+          b-button.ml-2(
+            size="sm"
+            variant="outline-secondary"
+            :disabled="!availableConditionFields.length"
+            @click="addCategoryRuleCondition"
+          )
+            | {{ $tr('Add field check') }}
+        div.row.mb-1(v-for="(condition, index) in categoryRuleConditions" :key="index")
+          div.col-md-4
+            b-form-select(
+              v-model="condition.field"
+              :options="conditionFieldOptions(index)"
+              size="sm"
+              @change="onConditionFieldChange(condition)"
+            )
+          div.col-md-6
+            b-form-input(
+              v-model.trim="condition.pattern"
+              :state="conditionPatternState(condition)"
+              size="sm"
+            )
+          div.col-md-2
+            b-button(
+              size="sm"
+              variant="outline-danger"
+              @click="removeCategoryRuleCondition(index)"
+            )
+              | {{ $tr('Remove') }}
+        small.text-muted(v-if="categoryRuleConditions.length")
+          | {{ $tr('All checks must match in addition to the pattern.') }}
+
+      b-alert(:show="categoryRuleMode === 'append' && categoryRuleConditions.length > 0" variant="info")
+        | {{ $tr('Saved as an additional rule; the existing rule of the category stays unchanged.') }}
+
       div.row
         div.col-md-7(v-if="categoryRuleMode === 'append'")
           b-form-group(:label="$tr('Existing category')")
@@ -200,6 +237,7 @@ export default {
       editedEvent: null,
       categoryRuleMode: 'append',
       categoryRuleField: '',
+      categoryRuleConditions: [],
       categoryRulePattern: '',
       categoryRuleCategory: null,
       categoryRuleNewPath: '',
@@ -226,8 +264,7 @@ export default {
       }
       const edits = Array.isArray(data.$edits) ? data.$edits : [];
       for (const entry of edits) {
-        const action =
-          entry?.action === 'created' ? this.$tr('Created') : this.$tr('Edited');
+        const action = entry?.action === 'created' ? this.$tr('Created') : this.$tr('Edited');
         const at = entry?.at ? new Date(entry.at).toLocaleString() : '';
         lines.push(`${action}: ${entry?.by || '?'} — ${at}`);
       }
@@ -325,7 +362,26 @@ export default {
         _.isEqual(category.name, this.categoryRuleCategory)
       );
     },
+    availableConditionFields() {
+      const used = new Set([
+        this.categoryRuleField,
+        ...this.categoryRuleConditions.map(condition => condition.field),
+      ]);
+      return this.categoryFieldOptions
+        .map(option => option.value)
+        .filter(field => !used.has(field));
+    },
+    conditionsValid() {
+      return this.categoryRuleConditions.every(
+        condition => condition.field && validateRegex(condition.pattern || '')
+      );
+    },
     appendCompatibilityError() {
+      // A conditioned rule is stored as an independent extra rule with its
+      // own field scope, so the existing rule's select_keys do not apply.
+      if (this.categoryRuleConditions.length > 0) {
+        return '';
+      }
       const category = this.selectedCategory;
       if (!category || category.rule?.type !== 'regex') {
         return '';
@@ -348,6 +404,7 @@ export default {
       }
       if (
         this.categoryRuleMode === 'append' &&
+        this.categoryRuleConditions.length === 0 &&
         category?.rule?.type === 'regex' &&
         !(category.rule.select_keys || []).length
       ) {
@@ -362,6 +419,9 @@ export default {
     },
     categoryRuleCanSave() {
       if (!this.categorizationAvailable || !validateRegex(this.categoryRulePattern || '')) {
+        return false;
+      }
+      if (!this.conditionsValid) {
         return false;
       }
       if (this.appendCompatibilityError || this.newCategoryExists) {
@@ -383,6 +443,9 @@ export default {
     },
     categoryRuleField() {
       this.categoryRulePattern = this.generatedRulePattern();
+      this.categoryRuleConditions = this.categoryRuleConditions.filter(
+        condition => condition.field !== this.categoryRuleField
+      );
       this.categoryRuleMessage = '';
       this.categoryRuleError = '';
     },
@@ -406,7 +469,9 @@ export default {
     },
     async confirmDelete() {
       const confirmed = await this.$bvModal.msgBoxConfirm(
-        this.$tr('Delete this event? It is moved to the trash bucket and can be restored from there.'),
+        this.$tr(
+          'Delete this event? It is moved to the trash bucket and can be restored from there.'
+        ),
         {
           title: this.$tr('Delete event'),
           okVariant: 'danger',
@@ -459,6 +524,7 @@ export default {
       this.categoryRulePattern = this.generatedRulePattern();
       this.categoryRuleIgnoreCase = true;
       this.categoryRuleNewPath = '';
+      this.categoryRuleConditions = [];
 
       const eventCategory = this.editedEvent?.data?.$category;
       const knownEventCategory =
@@ -470,6 +536,37 @@ export default {
     generatedRulePattern() {
       const value = this.selectedCategoryFieldValue;
       return value ? _.escapeRegExp(value) : '';
+    },
+    addCategoryRuleCondition() {
+      const field = this.availableConditionFields[0];
+      if (!field) {
+        return;
+      }
+      this.categoryRuleConditions.push({
+        field,
+        pattern: _.escapeRegExp(String(this.editedEvent?.data?.[field] || '')),
+      });
+    },
+    removeCategoryRuleCondition(index) {
+      this.categoryRuleConditions.splice(index, 1);
+    },
+    onConditionFieldChange(condition) {
+      // Prefill the pattern from the event, like the primary field does.
+      condition.pattern = _.escapeRegExp(String(this.editedEvent?.data?.[condition.field] || ''));
+    },
+    conditionFieldOptions(index) {
+      // Offer unused fields plus the row's current one, so a row keeps its
+      // selection while other rows cannot pick the same field twice.
+      const current = this.categoryRuleConditions[index]?.field;
+      return this.categoryFieldOptions.filter(
+        option => option.value === current || this.availableConditionFields.includes(option.value)
+      );
+    },
+    conditionPatternState(condition) {
+      if (!condition.pattern) {
+        return false;
+      }
+      return validateRegex(condition.pattern);
     },
     truncateValue(value) {
       const text = String(value || '');
@@ -483,6 +580,13 @@ export default {
       };
       if (this.categoryRuleField) {
         rule.select_keys = [this.categoryRuleField];
+      }
+      if (this.categoryRuleConditions.length > 0) {
+        rule.conditions = this.categoryRuleConditions.map(condition => ({
+          field: condition.field,
+          regex: condition.pattern,
+          ignore_case: this.categoryRuleIgnoreCase,
+        }));
       }
       return rule;
     },
@@ -507,15 +611,21 @@ export default {
             throw new Error(this.$tr('Choose category'));
           }
           const rule = category.rule || { type: 'none' };
-          if (rule.type === 'none' || rule.type === null) {
+          if (this.categoryRuleConditions.length > 0) {
+            // A conditioned rule must not be OR-ed into the existing regex -
+            // that would drop the AND semantics. Store it as an independent
+            // extra rule; the category's existing rule stays untouched.
+            this.categoryStore.addExtraRuleToClass(category.name, this.buildRule());
+          } else if (rule.type === 'none' || rule.type === null) {
             category.rule = this.buildRule();
+            this.categoryStore.classes_unsaved_changes = true;
           } else if (rule.type === 'regex') {
             category.rule.regex = `${rule.regex || ''}|${this.categoryRulePattern}`;
             if (rule.ignore_case === undefined) {
               category.rule.ignore_case = this.categoryRuleIgnoreCase;
             }
+            this.categoryStore.classes_unsaved_changes = true;
           }
-          this.categoryStore.classes_unsaved_changes = true;
         }
 
         await this.categoryStore.save();
